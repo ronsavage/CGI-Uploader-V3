@@ -13,7 +13,9 @@ This distro can be installed just like any other, but don't do that.
 
 Just unpack the distro, and edit lib/CGI/Up/.htcgiup.conf to suit.
 
-Check your edits with shell>perl -Ilib scripts/report.config.pl
+Check your edits:
+
+shell>perl -Ilib scripts/report.config.pl
 
 Keep in mind that if your 'use lib' line points to this unpacked distro,
 all code will use lib/CGI/Up/.htcgiup.conf.
@@ -27,6 +29,9 @@ If these files are different, you will become very confused.
 Your punishment for /that/ mistake is to eat a bowl of Vegemite Icecream. Mega-yuk.
 
 2)
+Install the module.
+
+3)
 Edit cgi-bin/*.pl to fix the 'use lib' lines.
 
 Copy these files into your (Apache's) cgi-bin/ dir, and set their execute bits.
@@ -34,40 +39,40 @@ Copy these files into your (Apache's) cgi-bin/ dir, and set their execute bits.
 shell>cp cgi-bin/*.pl ~/httpd/prefork/cgi-bin
 shell>chmod a+x ~/httpd/prefork/cgi-bin/use.cgi.*.pl
 
-3)
-Copy the HTML templates into your doc root.
+4)
+Copy the HTML templates into your doc root:
 
 shell>cp -r htdocs/uploads ~/httpd/prefork/htdocs
 
-3)
+5)
 If desired, copy the code from conf/startup.pl into your startup.pl.
 
 Check point (4) before restarting Apache.
 
-4)
+6)
 If desired, copy the code from conf/httpd.conf into your httpd.conf.
 
-Restart Apache.
+Restart Apache:
 
 shell>~/httpd/prefork/bin/apachectl graceful
 
-5)
-Create the database table into which the meta-data for uploaded files will be put.
+7)
+Create the database table into which the meta-data for uploaded files will be put:
 
 shell>perl -Ilib scripts/create.table.pl
 
 This uses lib/CGI/Up/.htcgiup.conf.
 
-6)
+8)
 Point your web client (Firefox) at /cgi-bin/use.cgi.simple.pl
 
 Note: neither CGI::Simple nor CGI::Up::Test's method use_cgi_simple
 outputs to the database.
 
-7)
+9)
 Point your web client (Firefox) at /cgi-bin/use.cgi.uploader.pl
 
-This does output to the database, so check that now.
+This does output to the database, so check that now:
 
 psql>select * from uploads;
 
