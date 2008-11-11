@@ -153,8 +153,6 @@ sub use_cgi_uploader
 			next;
 		}
 
-		warn "File: $field_name => $original_file_name";
-
 		$$file_list{$field_name} = {};
 	}
 
