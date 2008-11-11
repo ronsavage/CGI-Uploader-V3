@@ -1,5 +1,8 @@
 <form name="upload_form" id="upload_form" action="<tmpl_var name=form_action>" method="post" enctype="multipart/form-data">
 <table>
+<tmpl_if name=error>
+<tr><td align="center" colspan="2"><div style="color: red"><tmpl_var name=error></div></td></tr>
+</tmpl_if>
 <tr><td align="center" colspan="2">Results of previous upload</td></tr>
 <tr><td>Original file name 1:</td><td><tmpl_var name=original_file_name_1 escape=html></td></tr>
 <tr><td>Uploaded file name 1:</td><td><tmpl_var name=uploaded_file_name_1 escape=html></td></tr>
