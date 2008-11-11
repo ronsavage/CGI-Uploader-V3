@@ -103,6 +103,8 @@ sub use_cgi_simple
 			next;
 		}
 
+		# Upload one file.
+
 		$uploaded_file_name = "/tmp/uploaded_file_$i";
 		$ok                 = $self -> q() -> upload($original_file_name, $uploaded_file_name);
 
@@ -115,7 +117,7 @@ sub use_cgi_simple
 		}
 		else
 		{
-			$self -> form() -> param("file_name_$i" => $self -> q() -> cgi_error() );
+			$self -> form() -> param(error => $self -> q() -> cgi_error() );
 		}
 	}
 
@@ -158,6 +160,8 @@ sub use_cgi_uploader
 
 	if (keys %$file_list)
 	{
+		# Upload all files.
+
 		my($u) = CGI::Uploader -> new
 		(
 		 dbh          => $self -> simple() -> dbh(),
@@ -183,8 +187,32 @@ sub use_cgi_uploader
 		my(%var)    = $self -> q() -> Vars();
 		my($result) = $u -> store_uploads(\%var);
 
-#		warn "Result: $_ => $$result{$_}" for sort keys %$result;
-#		warn '-' x 50;
+		# Retrieve data for each uploaded file.
+
+		my($table_name) = $self -> table_name();
+
+		my($id);
+		my($meta_data);
+		my($sql);
+
+		for $i (1 .. 2)
+		{
+			$field_name = "file_name_$i";
+			$id         = $$result{"${field_name}_id"};
+
+			if (! $id)
+			{
+				next;
+			}
+
+			$sql       = "select * from $table_name where id = $id";
+			$meta_data = $self -> simple() -> dbh() -> selectrow_hashref($sql);
+
+			$self -> form() -> param("original_file_name_$i" => $$meta_data{'client_file_name'});
+			$self -> form() -> param("uploaded_file_name_$i" => $$meta_data{'server_file_name'});
+			$self -> form() -> param("size_$i"               => $$meta_data{'size'});
+			$self -> form() -> param("mime_type_$i"          => $$meta_data{'mime_type'});
+		}
 	}
 
 	$self -> web_page() -> param(content => $self -> form() -> output() );
