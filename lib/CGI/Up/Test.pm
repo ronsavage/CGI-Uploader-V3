@@ -28,9 +28,9 @@ sub BUILD
 	my($self)                     = @_;
 	$CGI::Simple::DISABLE_UPLOADS = 0;
 
-	$self -> config($config);
+	$self -> config(CGI::Up::Config -> new() );
 
-	my($tmpl_path) = $config -> tmpl_path();
+	my($tmpl_path) = $self -> config() -> tmpl_path();
 
 	$self -> q(CGI::Simple -> new() );
 	$self -> table_name($self -> config() -> table_name() );
