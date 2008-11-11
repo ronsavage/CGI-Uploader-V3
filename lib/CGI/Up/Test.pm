@@ -13,13 +13,13 @@ our $VERSION = '3.00';
 
 # -----------------------------------------------
 
-has config     => (is => 'rw', isa => 'CGI::Up::Config');
-has creator    => (is => 'rw', isa => 'DBIx::Admin::CreateTable');
-has form       => (is => 'rw', isa => 'HTML::Template');
-has q          => (is => 'rw', isa => 'CGI::Simple');
-has simple     => (is => 'rw', isa => 'DBIx::Simple');
-has table_name => (is => 'rw', isa => 'Str');
-has web_page   => (is => 'rw', isa => 'HTML::Template');
+has config     => (is => 'rw', required => 0, isa => 'CGI::Up::Config');
+has creator    => (is => 'rw', required => 0, isa => 'DBIx::Admin::CreateTable');
+has form       => (is => 'rw', required => 0, isa => 'HTML::Template');
+has q          => (is => 'rw', required => 0, isa => 'CGI::Simple');
+has simple     => (is => 'rw', required => 0, isa => 'DBIx::Simple');
+has table_name => (is => 'rw', required => 0, isa => 'Str');
+has web_page   => (is => 'rw', required => 0, isa => 'HTML::Template');
 
 # -----------------------------------------------
 
