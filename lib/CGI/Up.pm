@@ -75,9 +75,15 @@ Each key points to a hashref which has up to 3 keys:
 
 =item generate => {}
 
+This key is optional.
+
 =item store => {}
 
+This key is optional.
+
 =item upload => {}
+
+This key is optional.
 
 =back
 
@@ -117,17 +123,23 @@ The keys of this hashref are CGI form field names, where the fields are of type 
 
 Each key points to a hashref that specifies how to generate files, e.g. thumbnails, from the uploaded file.
 
+This key is optional.
+
 =item store => {}
 
 The keys of this hashref are CGI form field names, where the fields are of type 'file'.
 
 Each key points to a hashref that specifies how to store meta-data for the uploaded file.
 
+This key is optional.
+
 =item upload => {}
 
 The keys of this hashref are CGI form field names, where the fields are of type 'file'.
 
 Each key points to a hashref that specifies which CGI form field names to process.
+
+This key is optional.
 
 =back
 
