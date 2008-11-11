@@ -69,4 +69,5 @@ Point your web client (Firefox) at /cgi-bin/use.cgi.uploader.pl
 
 This does output to the database, so check that now.
 
-psql>select * from uploads
+psql>select * from uploads;
+
