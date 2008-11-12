@@ -3,20 +3,61 @@ package CGI::Up;
 use strict;
 use warnings;
 
+use File::Copy;
+use File::Temp 'tempfile';
+
 use Squirrel;
 
 our $VERSION = '3.00';
 
 # -----------------------------------------------
 
-has hash => (is => 'rw', required => 1, isa => 'Hash');
-
-# -----------------------------------------------
-
 sub BUILD
 {
-	my($self)  = @_;
-	my(%field) = $self -> hash();
+	my($self, %field)  = @_;
+
+	# Ensure a query object is available.
+
+	my($q);
+
+	if ($field{'query'})
+	{
+		$q        = delete $field{'query'};
+		my($ok)   = 0;
+		my(@type) = (qw/Apache::Request Apache2::Request CGI::Simple CGI/);
+
+		my($type);
+
+		for $type (@type)
+		{
+			if ($q -> isa($type) )
+			{
+				$ok = 1;
+
+				last;
+			}
+		}
+
+		if (! $ok)
+		{
+			coonfess 'Your query object must be one of these types: ' . join(', ', @type);
+		}
+	}
+	else
+	{
+		require CGI::Simple;
+
+		$q = CGI::Simple -> new();
+	}
+
+	# Ensure a temp dir name is available.
+
+	if (! $$store_option{'temp_dir'})
+	{
+		$$store_option{'temp_dir'} = File::Spec -> tmpdir();
+	}
+
+	my($temp_fh, $temp_file_name) = tempfile('CGIuploaderXXXXX', UNLINK => 1, DIR => $$store_option{'temp_dir'} );
 
 	my($field_name, $field_option);
 	my($meta_data);
@@ -49,31 +90,12 @@ sub BUILD
 
 		# Perform the upload for this field.
 
-		$meta_data = $self -> upload($field_name);
+		$meta_data = $self -> upload($q, $field_name, $temp_file_name);
 
 		# Loop over all store options.
 
 		for $store_option (@{$$field_option{'store'} })
 		{
-			# Ensure a column map is available.
-
-			if (! $$store_option{'column_map'})
-			{
-				$$store_option{'column_map'} =
-				{
-					client_file_name => 'client_file_name',
-					date_stamp       => 'date_stamp',
-					extension        => 'extension',
-					height           => 'height',
-					id               => 'id',
-					mime_type        => 'mime_type',
-					parent_id        => 'parent_id',
-					server_file_name => 'server_file_name',
-					size             => 'size',
-					width            => 'width',
-				};
-			}
-
 			# Ensure a manager is available.
 
 			if (! $$store_option{'manager'})
@@ -93,49 +115,59 @@ sub BUILD
 
 sub manager
 {
-	my($self, $field_name, $store) = @_;
+	my($self, $field_name, $store_option) = @_;
+
+	# Ensure a column map is available.
+
+	if (! $$store_option{'column_map'})
+	{
+		$$store_option{'column_map'} =
+		{
+			client_file_name => 'client_file_name',
+			date_stamp       => 'date_stamp',
+			extension        => 'extension',
+			height           => 'height',
+			id               => 'id',
+			mime_type        => 'mime_type',
+			parent_id        => 'parent_id',
+			server_file_name => 'server_file_name',
+			size             => 'size',
+			width            => 'width',
+		};
+	}
 
 	# Ensure a dbh or dsn was specified.
 
-	if (! ($$store{'dbh'} || $$store{'dsn'}) )
+	if (! ($$store_option{'dbh'} || $$store_option{'dsn'}) )
 	{
 		confess "You must provide at least one of dbh and dsn for form field '$field_name'";
 	}
 
-	# Ensure a query object is available.
-
-	if (! $$store{'query'})
-	{
-		require CGI::Simple;
-
-		$$store{'query'} = CGI::Simple -> new();
-	}
-
 	# Ensure, if the caller is using Postgres, that they specified a sequence_name.
 
-	if ($$store{'dbh'})
+	if ($$store_option{'dbh'})
 	{
-		my($db_server) = $$store{'dbh'} -> get_info(17);
+		my($db_server) = $$store_option{'dbh'} -> get_info(17);
 
 		if ($db_server eq 'PostgreSQL')
 		{
-			if (! $$store{'sequence_name'})
+			if (! $$store_option{'sequence_name'})
 			{
-				confess "You must provide a sequence name when using Postgres, for form field '$field_name'";
+				confess "You must provide a sequence name, when using Postgres, for form field '$field_name'";
 			}
 		}
 	}
 
 	# Ensure the sequence name is not undef.
 
-	if (! $$store{'sequence_name'})
+	if (! $$store_option{'sequence_name'})
 	{
-		$$store{'sequence_name'} = '';
+		$$store_option{'sequence_name'} = '';
 	}
 
 	# Ensure a table name was specified.
 
-	if (! $$store{'table_name'})
+	if (! $$store_option{'table_name'})
 	{
 		confess "You must provide a table_name for form field '$field_name'";
 	}
@@ -150,7 +182,54 @@ sub manager
 
 sub upload
 {
-	my($self, $field_name) = @_;
+	my($self, $q, $field_name, $temp_file_name) = @_;
+	my($file_name) = $q -> param($field_name);
+
+	my(%result);
+
+	if ($q -> isa('Apache::Request') || $q -> isa('Apache2::Request') )
+	{
+		my($upload)          = $q -> upload($field_name);
+		$result{'fh'}        = $upload -> fh();
+		$result{'mime_type'} = $upload -> type() || '';
+	}
+	elsif ($q -> isa('CGI::Simple') )
+	{
+		$result{'fh'}        = $q -> upload($file_name);
+		$result{'mime_type'} = $q -> upload_info($file_name, 'mime') || '';
+
+		if (! $result{'fh'} && $q -> cgi_error() )
+		{
+			warn $q -> cgi_error();
+
+			return undef;
+		}
+	}
+	else # It's a CGI.
+	{
+		$result{'fh'}        = $q -> upload($file_field);
+		$result{'mime_type'} = $q -> uploadInfo($$result{'fh'});
+
+		if ($result{'mime_type'})
+		{
+			$result{'mime_type'} = $$result{'mime_type'}{'Content-Type'};
+		}
+
+		if (! $result{'fh'} && $q -> cgi_error() )
+		{
+			warn $q -> cgi_error();
+
+			return undef;
+		}
+	}
+
+	if (! $$result{'fh'})
+	{
+		return undef;
+	}
+
+	binmode($result{'fh'});
+	copy($result{'fh'}, $temp_file_name) || confess "Unable to create temp file '$temp_file_name': $!";
 
 	return {};
 
@@ -201,11 +280,13 @@ This is the class's contructor.
 
 You must pass a hash to C<new(...)>.
 
-The keys of this hash are CGI form field names (where the fields are of type I<file>).
+Firstly, you pass a query object in, if you wish, using query => $q.
+
+After that, the keys of this hash are CGI form field names (where the fields are of type I<file>).
 
 Each key points to an arrayref of options which specifies how to process the field.
 
-These arrayrefs contain either 2 or 4 entries (since I<generate> is optional and I<store> is mandatory):
+Note: CGI form field names cannot be I<query> or I<temp_dir>.
 
 Options:
 
@@ -218,6 +299,28 @@ Each element of the arrayref pointed to by I<generate> specifies how to generate
 Use multiple elements to generate multiple files, all based on the same uploaded file.
 
 See below for details of I<generate>.
+
+This key is optional.
+
+=item query => $q
+
+Use this to pass in a query object.
+
+This object is expected to belong to one of these classes:
+
+=over 4
+
+=item Apache::Request
+
+=item Apache2::Request
+
+=item CGI
+
+=item CGI::Simple
+
+=back
+
+If not provided, an object of type C<CGI::Simple> will be created and used to do the uploading.
 
 This key is optional.
 
@@ -239,6 +342,12 @@ This key is mandatory.
 Being mandatory means the uploaded file's meta-data I<must> be stored somewhere, but making the I<generate>
 key optional means you do not have to transform uploaded files in any way, if you don't wish to.
 
+=item temp_dir => 'String'
+
+If not provided, an object of type C<File::Spec> will be created and its tmp_dir() method called.
+
+This key is optional.
+
 =back
 
 =head1 The I<generate> key
@@ -259,7 +368,7 @@ Each hashref contains the following keys:
 
 The I<store> key points to an arrayref of hashrefs.
 
-Use multiple elements to store multiple sets of meta-data, all based on the same uploaded file.
+Use multiple elements in the arrayref to store multiple sets of meta-data, all based on the same uploaded file.
 
 Each hashref contains 1 .. 5 of the following keys:
 
@@ -443,26 +552,6 @@ I<$field_name>, I<$meta_data> and %{...} are described a few line above.
 
 In this case, the I<dbh> and I<table_name> keys are obviously mandatory (along with I<sequence_name> for
 Postgres), and the default store manager will generate and execute SQL to save the meta-data.
-
-=item query => A query object
-
-This object is expected to belong to one of these classes:
-
-=over 4
-
-=item Apache::Request
-
-=item Apache2::Request
-
-=item CGI
-
-=item CGI::Simple
-
-=back
-
-This key is optional.
-
-If not provided, an object of type C<CGI::Simple> will be created and used to do the uploading.
 
 =item sequence_name => 'String'
 
