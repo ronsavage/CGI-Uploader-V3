@@ -54,13 +54,14 @@ create table $table_name
 (
 id $primary_key,
 client_file_name varchar(255) not null,
-extension        varchar(255),
-height integer,
-mime_type        varchar(255),
-parent_id integer,
-server_file_name varchar(255),
-size integer,
-width integer
+date_stamp datestamp,
+extension        varchar(255) not null,
+height integer not null,
+mime_type        varchar(255) not null,
+parent_id integer not null,
+server_file_name varchar(255) not null,
+size integer not null,
+width integer not null
 )
 SQL
 
@@ -125,7 +126,7 @@ sub use_cgi_simple
 
 	print $self -> q() -> header(), $self -> web_page() -> output();
 
-} # End of run.
+} # End of use_cgi_simple.
 
 # -----------------------------------------------
 
