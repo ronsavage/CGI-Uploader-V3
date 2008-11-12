@@ -9,74 +9,152 @@ our $VERSION = '3.00';
 
 # -----------------------------------------------
 
-has generate => (is => 'rw', required => 0, predicate => 'has_generate', isa => 'ArrayRef');
-has store    => (is => 'rw', required => 1, isa => 'ArrayRef');
+has hash => (is => 'rw', required => 1, isa => 'Hash');
 
 # -----------------------------------------------
 
 sub BUILD
 {
-	my($self) = @_;
+	my($self)  = @_;
+	my(%field) = $self -> hash();
 
-	my($store);
+	my($field_name, $field_option);
+	my($meta_data);
+	my($store, $store_option);
 
-	for $store (@{$self -> store()})
+	for $field_name (keys %field)
 	{
-		if (! ($$store{'dbh'} || $$store{'dsn'}) )
+		$field_option = $field{$field_name};
+
+		# Ensure the caller has provided at least a store key.
+
+		if (! $$field_option{'store'})
 		{
-			confess 'You must provide one of dbh or dsn';
+			confess "You must provide at least the store key for the form field '$field_name'";
 		}
 
-		if (! $$store{'table_name'})
+		# Ensure the store key points to a hashref.
+
+		if (ref($$field_option{'store'}) ne 'HASHREF')
 		{
-			confess 'You must provide a table_name';
+			confess "You must provide a hashref for the value pointed to by $field_name's 'store' key";
 		}
 
-		$self -> run($store);
+		# Ensure the generate key, if any, points to a hashref.
+
+		if ($$field_option{'generate'} && (ref($$field_option{'store'}) ne 'HASHREF') )
+		{
+			confess "You must provide a hashref for the value pointed to by $field_name's 'generate' key";
+		}
+
+		# Perform the upload for this field.
+
+		$meta_data = $self -> upload($field_name);
+
+		# Loop over all store options.
+
+		for $store_option (@{$$field_option{'store'} })
+		{
+			# Ensure a column map is available.
+
+			if (! $$store_option{'column_map'})
+			{
+				$$store_option{'column_map'} =
+				{
+					client_file_name => 'client_file_name',
+					date_stamp       => 'date_stamp',
+					extension        => 'extension',
+					height           => 'height',
+					id               => 'id',
+					mime_type        => 'mime_type',
+					parent_id        => 'parent_id',
+					server_file_name => 'server_file_name',
+					size             => 'size',
+					width            => 'width',
+				};
+			}
+
+			# Ensure a manager is available.
+
+			if (! $$store_option{'manager'})
+			{
+				$store_option{'manager'} = $self -> manager($field_name, $store_option);
+			}
+
+			# Call either the caller's manager or the default manager.
+
+			$$store_option{'manager'} -> new(field_name => $field_name, meta_data => $meta_data, %$store_option);
+		}
 	}
 
 }	# End of BUILD.
 
 # -----------------------------------------------
 
-sub run
+sub manager
 {
-	my($self, $store) = @_;
+	my($self, $field_name, $store) = @_;
 
-	if (! $$store{'column_map'})
+	# Ensure a dbh or dsn was specified.
+
+	if (! ($$store{'dbh'} || $$store{'dsn'}) )
 	{
-		$$store{'column_map'} =
-		{
-			client_file_name => 'client_file_name',
-			date_stamp       => 'date_stamp',
-			extension        => 'extension',
-			height           => 'height',
-			id               => 'id',
-			mime_type        => 'mime_type',
-			parent_id        => 'parent_id',
-			server_file_name => 'server_file_name',
-			size             => 'size',
-			width            => 'width',
-		};
+		confess "You must provide at least one of dbh and dsn for form field '$field_name'";
 	}
+
+	# Ensure a query object is available.
+
+	if (! $$store{'query'})
+	{
+		require CGI::Simple;
+
+		$$store{'query'} = CGI::Simple -> new();
+	}
+
+	# Ensure, if the caller is using Postgres, that they specified a sequence_name.
+
+	if ($$store{'dbh'})
+	{
+		my($db_server) = $$store{'dbh'} -> get_info(17);
+
+		if ($db_server eq 'PostgreSQL')
+		{
+			if (! $$store{'sequence_name'})
+			{
+				confess "You must provide a sequence name when using Postgres, for form field '$field_name'";
+			}
+		}
+	}
+
+	# Ensure the sequence name is not undef.
 
 	if (! $$store{'sequence_name'})
 	{
 		$$store{'sequence_name'} = '';
 	}
 
-	if ($$store{'manager'})
-	{
-		$$store{'manager'} -> new(meta_data => {}, %$store);
-	}
-	else
-	{
-		require CGI::Uploader::Store::Manager;
+	# Ensure a table name was specified.
 
-		CGI::Uploader::Store::Manager -> new(meta_data => {}, %$store});
+	if (! $$store{'table_name'})
+	{
+		confess "You must provide a table_name for form field '$field_name'";
 	}
 
-} # End of run.
+	require CGI::Uploader::Store::Manager;
+
+	return 'CGI::Uploader::Store::Manager';
+
+} # End of manager.
+
+# -----------------------------------------------
+
+sub upload
+{
+	my($self, $field_name) = @_;
+
+	return {};
+
+} # End of upload.
 
 # -----------------------------------------------
 
@@ -334,16 +412,20 @@ This is the name of a class which will manage the transfer of meta-data to stora
 This key is optional.
 
 If you provide your own class name here, C<CGI::Uploader> will create an instance of this class
-by calling new(meta_data => $meta_data, %{...}).
+by calling new(meta_data => $meta_data, field_name => $field_name, %{...}).
 
-Here, $meta_data will be a hashref of options, and %{...} will be one of the hashrefs in the arrayref
+I<$field_name> will be the one of the keys in the hash passed in to the constructor.
+
+Each key in that hash will cause the manager class to be called once, if I<manager> is specifed.
+
+Here, I<$meta_data> will be a hashref of options, and %{...} will be one of the hashrefs in the arrayref
 pointed to by I<store>.
 
 Each hashref in the latter arrayref will cause another instance of this class to be instantiated and used.
 
-If you do not provide the I<dbh> key, $dbh will be '', the empty string.
+If you do not provide the I<dbh> key, I<$dbh> will be '', the empty string.
 
-The same goes for $table_name and $sequence_name.
+The same goes for I<$table_name> and I<$sequence_name>.
 
 Note: They are empty strings and not undef because Moose likes things that way for required parameters.
 
@@ -351,13 +433,36 @@ In the case where you provide the I<manager> key, your class is responsible for 
 
 See the next section for the definition of the meta-data.
 
-If you do not provide the I<manager> key, C<CGI::Uploader> will create an instance of a
-built-in class C<CGI::Uploader::Store::Manager> by calling new(meta_data => $meta_data, %{...}).
+If you do not provide the I<manager> key, C<CGI::Uploader> will create an instance of a built-in class
+C<CGI::Uploader::Store::Manager> by calling new(meta_data => $meta_data, field_name => $field_name, %{...}).
 
-$meta_data and %{...} are described a few line above.
+Each key in the hash pass in to the constructor will cause the default manager class to be called once,
+ if I<manager> is not specifed.
+
+I<$field_name>, I<$meta_data> and %{...} are described a few line above.
 
 In this case, the I<dbh> and I<table_name> keys are obviously mandatory (along with I<sequence_name> for
 Postgres), and the default store manager will generate and execute SQL to save the meta-data.
+
+=item query => A query object
+
+This object is expected to belong to one of these classes:
+
+=over 4
+
+=item Apache::Request
+
+=item Apache2::Request
+
+=item CGI
+
+=item CGI::Simple
+
+=back
+
+This key is optional.
+
+If not provided, an object of type C<CGI::Simple> will be created and used to do the uploading.
 
 =item sequence_name => 'String'
 

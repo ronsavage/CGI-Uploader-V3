@@ -10,8 +10,7 @@ our $VERSION = '3.00';
 # -----------------------------------------------
 
 has column_map    => (is => 'rw', required => 1, isa => 'HashRef');
-has dbh           => (is => 'rw', required => 0, predicate => 'has_dbh', isa => 'Any');
-has driver_name   => (is => 'rw', required => 0, isa => 'Str');
+has dbh           => (is => 'rw', required => 0, isa => 'Any');
 has dsn           => (is => 'rw', required => 0, predicate => 'has_dsn', isa => 'ArrayRef');
 has meta_data     => (is => 'rw', required => 1, isa => 'HashRef');
 has simple        => (is => 'rw', required => 0, isa => 'DBIx::Simple');
@@ -24,22 +23,21 @@ sub BUILD
 {
 	my($self) = @_;
 
+	# Use either the caller's dbh or fabricate one.
+
 	if ($self -> has_dbh() )
 	{
 		$self -> use_users_dbh();
 	}
 	else
 	{
-		if (! $self -> has_dsn() )
-		{
-			confess 'You must provide at least one of dbh and dsn';
-		}
+		# CGI::Uploader checked that at least one of dbh and dsn was specified.
+		# So, we don't need to call $self -> has_dsn() here.
 
 		require DBIx::Simple;
 
 		$self -> simple(DBIx::Simple -> new(@{$self -> dsn()}) );
 		$self -> dbh($self -> simple() -> dbh() );
-		$self -> driver_name($self -> dbh() -> get_info(17) );
 		$self -> use_dbix_simple();
 	}
 
@@ -51,16 +49,18 @@ sub use_dbix_simple
 {
 	my($self)       = @_;
 	my($column_map) = $self -> column_map();
+	my($db_server)  = $self -> dbh() -> get_info(17);
 	my($meta_data)  = $self -> meta_data();
 	my($sql)        = 'insert into ' . $self -> table_name();
 
-	if ($self -> driver_name() eq 'PostgreSQL')
-	{
-		my($id) = $self -> dbh() -> selectrow_array("select nextval('" . $self -> sequence_name() . "')");
+	# Ensure, if the caller is using Postgres, and they want the id field populated,
+	# that we stuff the next value from thec callers' sequence into it.
 
+	if ($db_server eq 'PostgreSQL')
+	{
 		if ($$column_map{'id'})
 		{
-			$$meta_data{$$column_map{'id'} } = $id;
+			$$meta_data{$$column_map{'id'} } = $self -> dbh() -> selectrow_array("select nextval('" . $self -> sequence_name() . "')");
 		}
 	}
 
