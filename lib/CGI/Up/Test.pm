@@ -130,7 +130,7 @@ sub use_cgi_simple
 
 # -----------------------------------------------
 
-sub use_cgi_uploader
+sub use_cgi_uploader_v2
 {
 	my($self) = @_;
 	my($script) = 'use.cgi.uploader.pl';
@@ -220,7 +220,7 @@ sub use_cgi_uploader
 
 	print $self -> q() -> header(), $self -> web_page() -> output();
 
-} # End of use_cgi_uploader.
+} # End of use_cgi_uploader_v2.
 
 # -----------------------------------------------
 
