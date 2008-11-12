@@ -24,14 +24,6 @@ WriteMakefile
  PL_FILES  => {},
  PREREQ_PM =>
  {
-	 Apache::DBI              => 0,
-	 Apache2::Const           => 0,
-	 Apache2::Request         => 0,
-	 Apache2::RequestIO       => 0,
-	 Apache2::RequestRec      => 0,
-	 Apache2::RequestUtil     => 0,
-	 Apache2::Response        => 0,
-	 Apache2::Upload          => 0,
 	 Carp                     => 0,
 	 CGI::Simple              => 0,
 	 Config::IniFiles         => 0,
