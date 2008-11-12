@@ -9,11 +9,12 @@ our $VERSION = '3.00';
 
 # -----------------------------------------------
 
+has column_map    => (is => 'rw', required => 1, isa => 'HashRef');
 has dbh           => (is => 'rw', required => 0, predicate => 'has_dbh', isa => 'Any');
 has driver_name   => (is => 'rw', required => 0, isa => 'Str');
 has dsn           => (is => 'rw', required => 0, predicate => 'has_dsn', isa => 'ArrayRef');
 has meta_data     => (is => 'rw', required => 1, isa => 'HashRef');
-has simple        => (is => 'rw', required => 0, predicate => 'has_simple', isa => 'DBIx::Simple');
+has simple        => (is => 'rw', required => 0, isa => 'DBIx::Simple');
 has sequence_name => (is => 'rw', required => 1, isa => 'Any');
 has table_name    => (is => 'rw', required => 1, isa => 'Any');
 
@@ -48,17 +49,22 @@ sub BUILD
 
 sub use_dbix_simple
 {
-	my($self)      = @_;
-	my($meta_data) = $self -> meta_data();
-	my($sql)       = 'insert into ' . $self -> table_name();
+	my($self)       = @_;
+	my($column_map) = $self -> column_map();
+	my($meta_data)  = $self -> meta_data();
+	my($sql)        = 'insert into ' . $self -> table_name();
 
 	if ($self -> driver_name() eq 'PostgreSQL')
 	{
 		my($id) = $self -> dbh() -> selectrow_array("select nextval('" . $self -> sequence_name() . "')");
 
-		if ($
+		if ($$column_map{'id'})
+		{
+			$$meta_data{$$column_map{'id'} } = $id;
+		}
 	}
 
+	$self -> simple() -> iquery($sql, $meta_data);
 
 } # End of use_dbix_simple.
 
