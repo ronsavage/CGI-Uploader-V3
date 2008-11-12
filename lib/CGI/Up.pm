@@ -9,10 +9,8 @@ our $VERSION = '3.00';
 
 # -----------------------------------------------
 
-has form_fields => (is => 'rw', required => 0, predicate => 'has_form_fields', isa => 'HashRef');
-has generate    => (is => 'rw', required => 0, predicate => 'has_generate',    isa => 'HashRef');
-has store       => (is => 'rw', required => 0, predicate => 'has_store',       isa => 'HashRef');
-has upload      => (is => 'rw', required => 0, predicate => 'has_upload',      isa => 'HashRef');
+has generate => (is => 'rw', required => 0, predicate => 'has_generate', isa => 'HashRef');
+has store    => (is => 'rw', required => 1, isa => 'HashRef');
 
 # -----------------------------------------------
 
@@ -35,6 +33,27 @@ sub BUILD
 	if ($self -> has_form_fields() )
 	{
 		@field_names = keys %{$self -> form_fields()};
+	}
+
+	my($store) = $self -> store();
+
+	if (! $$store{'column_map'})
+	{
+		$$store{'column_map'} =
+		{
+			client_file_name => 'client_file_name',
+			date_stamp       => 'date_stamp',
+			extension        => 'extension',
+			height           => 'height',
+			id               => 'id',
+			mime_type        => 'mime_type',
+			parent_id        => 'parent_id',
+			server_file_name => 'server_file_name',
+			size             => 'size',
+			width            => 'width',
+		};
+
+		$self -> store($store);
 	}
 
 }	# End of BUILD.
@@ -136,7 +155,15 @@ key optional means you do not have to transform uploaded files in any way, if yo
 
 The I<generate> key points to an arrayref of hashrefs.
 
-This section discusses these hashrefs.
+Use multiple elements to store multiple versions of the uploaded file.
+
+Each hashref contains the following keys:
+
+=over 4
+
+=item One rainy day, design this section of the code, and document it
+
+=back
 
 =head1 The I<store> key
 
@@ -152,10 +179,13 @@ Each hashref contains 1 .. 5 of the following keys:
 
 This hashref maps column_names used by C<CGI::Uploader> to column names used by your storage.
 
+I<Column_map> is optional.
+
 The default column_map is:
 
 	{
 	client_file_name => 'client_file_name',
+	date_stamp       => 'date_stamp',
 	extension        => 'extension',
 	height           => 'height',
 	id               => 'id',
@@ -181,11 +211,17 @@ If you omit any keys from your map, the corresponding meta-data will not be stor
 The client_file_name is the name supplied by the web client to C<CGI::Uploader>. It may
 I<or may not> have path information prepended, depending on the web client.
 
+=item Date stamp
+
+The value of the function I<now()> will be stored in this field.
+
+I<Date_stamp> has an underscore in it in case your database regards datastamp as a reserved word.
+
 =item Extension
 
 This is provided by the C<File::Basename> module.
 
-The extension is a string I<without> the dot.
+The extension is a string I<without> the leading dot.
 
 If an extension cannot be determined, the value will be '', the empty string.
 
@@ -198,6 +234,8 @@ For non-image files, the value will be 0.
 =item Id
 
 The id is (presumably) the primary key of your table.
+
+In the case of Postgres, it will be populated by the sequence named with the I<sequence_name> key, below.
 
 =item MIME type
 
@@ -235,11 +273,47 @@ This is a database handle for use by the default manager class C<CGI::Uploader::
 discussed below, under I<manager>.
 
 This key is optional if you use the I<manager> key, since in that case you can use your own
-code as the storage manager. If you do provide the I<dbh> key, it is passed in to your manager
-just in case you need it.
+code as the storage manager.
 
-This key is mandatory if you do not use the I<manager> key, since without the I<manager> key
-I<dbh> must be passed in to the default manager C<CGI::Uploader::Store::Manager>.
+If you do provide the I<dbh> key, it is passed in to your manager just in case you need it.
+
+Also, if you provide I<dbh>, the I<dsn> key, below, is ignored.
+
+If you do not provide the I<dbh> key, the default manager uses the I<dsn> arrayref to create an
+object of type C<DBIx::Simple>, and uses its I<dbh>.
+
+=item dsn => [...]
+
+This key is ignored if you provide a I<dbh> key.
+
+This key is mandatory when you do not provide a I<dbh> key.
+
+The elements in the arrayref are:
+
+=over 4
+
+=item A connection string
+
+E.g.: 'dbi:Pg:dbname=test'
+
+This element is mandatory.
+
+=item A username string
+
+This element is mandatory, even if it's just the empty string.
+
+=item A password string
+
+This element is mandatory, even if it's just the empty string.
+
+=item A connection attributes hashref
+
+This element is optional.
+
+=back
+
+The default manager class calls DBIx::Simple -> new(@$dsn) to connect to the database, i.e. in order
+to generate a I<dbh>, when you don't provide a I<dbh> key.
 
 =item manager => 'String'
 
@@ -248,16 +322,27 @@ This is the name of a class which will manage the transfer of meta-data to stora
 This key is optional.
 
 If you provide your own class name here, C<CGI::Uploader> will create an instance of this class
-by calling new($meta_data, $dbh, $table_name, $sequence_name), where $meta_data will be a hashref of options.
+by calling new(meta_data => $meta_data, %{...}).
 
-If you do not provide the I<dbh> key, $dbh will be undef. The same goes for $table_name and $sequence_name.
+Here, $meta_data will be a hashref of options, and %{...} will be one of the hashrefs in the arrayref
+pointed to by I<store>.
+
+Each hashref in the latter arrayref will cause another instance of this class to be instantiated and used.
+
+If you do not provide the I<dbh> key, $dbh will be '', the empty string.
+
+The same goes for $table_name and $sequence_name.
+
+Note: They are empty strings and not undef because Moose likes things that way for required parameters.
 
 In the case where you provide the I<manager> key, your class is responsible for saving the meta-data.
 
 See the next section for the definition of the meta-data.
 
 If you do not provide the I<manager> key, C<CGI::Uploader> will create an instance of a
-built-in class C<CGI::Uploader::Store::Manager> by calling new($meta_data, $dbh, $table_name, $sequence_name).
+built-in class C<CGI::Uploader::Store::Manager> by calling new(meta_data => $meta_data, %{...}).
+
+$meta_data and %{...} are described a few line above.
 
 In this case, the I<dbh> and I<table_name> keys are obviously mandatory (along with I<sequence_name> for
 Postgres), and the default store manager will generate and execute SQL to save the meta-data.
