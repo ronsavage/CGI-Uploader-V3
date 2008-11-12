@@ -14,7 +14,7 @@ has dbh           => (is => 'rw', required => 0, isa => 'Any');
 has dsn           => (is => 'rw', required => 0, predicate => 'has_dsn', isa => 'ArrayRef');
 has meta_data     => (is => 'rw', required => 1, isa => 'HashRef');
 has simple        => (is => 'rw', required => 0, isa => 'DBIx::Simple');
-has sequence_name => (is => 'rw', required => 1, isa => 'Any');
+has sequence_name => (is => 'rw', required => 0, isa => 'Any');
 has table_name    => (is => 'rw', required => 1, isa => 'Any');
 
 # -----------------------------------------------
@@ -27,7 +27,7 @@ sub BUILD
 
 	if ($self -> has_dbh() )
 	{
-		$self -> use_users_dbh();
+		$self -> use_unknown_module();
 	}
 	else
 	{
@@ -54,14 +54,11 @@ sub use_dbix_simple
 	my($sql)        = 'insert into ' . $self -> table_name();
 
 	# Ensure, if the caller is using Postgres, and they want the id field populated,
-	# that we stuff the next value from thec callers' sequence into it.
+	# that we stuff the next value from the callers' sequence into it.
 
-	if ($db_server eq 'PostgreSQL')
+	if ( ($db_server eq 'PostgreSQL') && ($$column_map{'id'}) )
 	{
-		if ($$column_map{'id'})
-		{
-			$$meta_data{$$column_map{'id'} } = $self -> dbh() -> selectrow_array("select nextval('" . $self -> sequence_name() . "')");
-		}
+		$$meta_data{$$column_map{'id'} } = $self -> dbh() -> selectrow_array("select nextval('" . $self -> sequence_name() . "')");
 	}
 
 	$self -> simple() -> iquery($sql, $meta_data);
@@ -70,11 +67,11 @@ sub use_dbix_simple
 
 # -----------------------------------------------
 
-sub use_users_dbh
+sub use_unknown_module
 {
 	my($self) = @_;
 
-} # End of use_users_dbh.
+} # End of use_unknown_module.
 
 # -----------------------------------------------
 

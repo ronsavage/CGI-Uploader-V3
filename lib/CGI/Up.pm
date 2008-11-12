@@ -12,17 +12,19 @@ our $VERSION = '3.00';
 
 # -----------------------------------------------
 
+has query    => (is => 'rw', required => 0, predicate => 'has_query', isa => 'Any');
+has temp_dir => (is => 'rw', required => 0, predicate => 'has_temp_dir', isa => 'Any');
+
+# -----------------------------------------------
+
 sub BUILD
 {
-	my($self, %field)  = @_;
+	my($self) = @_;
 
 	# Ensure a query object is available.
 
-	my($q);
-
-	if ($field{'query'})
+	if ($self -> has_query() )
 	{
-		$q        = delete $field{'query'};
 		my($ok)   = 0;
 		my(@type) = (qw/Apache::Request Apache2::Request CGI::Simple CGI/);
 
@@ -30,7 +32,7 @@ sub BUILD
 
 		for $type (@type)
 		{
-			if ($q -> isa($type) )
+			if ($self -> query() -> isa($type) )
 			{
 				$ok = 1;
 
@@ -47,66 +49,14 @@ sub BUILD
 	{
 		require CGI::Simple;
 
-		$q = CGI::Simple -> new();
+		$self -> query(CGI::Simple -> new() );
 	}
 
 	# Ensure a temp dir name is available.
 
-	if (! $$store_option{'temp_dir'})
+	if (! $self -> has_temp_dir() )
 	{
-		$$store_option{'temp_dir'} = File::Spec -> tmpdir();
-	}
-
-	my($temp_fh, $temp_file_name) = tempfile('CGIuploaderXXXXX', UNLINK => 1, DIR => $$store_option{'temp_dir'} );
-
-	my($field_name, $field_option);
-	my($meta_data);
-	my($store, $store_option);
-
-	for $field_name (keys %field)
-	{
-		$field_option = $field{$field_name};
-
-		# Ensure the caller has provided at least a store key.
-
-		if (! $$field_option{'store'})
-		{
-			confess "You must provide at least the store key for the form field '$field_name'";
-		}
-
-		# Ensure the store key points to a hashref.
-
-		if (ref($$field_option{'store'}) ne 'HASHREF')
-		{
-			confess "You must provide a hashref for the value pointed to by $field_name's 'store' key";
-		}
-
-		# Ensure the generate key, if any, points to a hashref.
-
-		if ($$field_option{'generate'} && (ref($$field_option{'store'}) ne 'HASHREF') )
-		{
-			confess "You must provide a hashref for the value pointed to by $field_name's 'generate' key";
-		}
-
-		# Perform the upload for this field.
-
-		$meta_data = $self -> upload($q, $field_name, $temp_file_name);
-
-		# Loop over all store options.
-
-		for $store_option (@{$$field_option{'store'} })
-		{
-			# Ensure a manager is available.
-
-			if (! $$store_option{'manager'})
-			{
-				$store_option{'manager'} = $self -> manager($field_name, $store_option);
-			}
-
-			# Call either the caller's manager or the default manager.
-
-			$$store_option{'manager'} -> new(field_name => $field_name, meta_data => $meta_data, %$store_option);
-		}
+		$self -> temp_dir(File::Spec -> tmpdir() );
 	}
 
 }	# End of BUILD.
@@ -182,23 +132,84 @@ sub manager
 
 sub upload
 {
-	my($self, $q, $field_name, $temp_file_name) = @_;
+	my($self, %field)             = @_;
+	my($temp_fh, $temp_file_name) = tempfile('CGIuploaderXXXXX', UNLINK => 1, DIR => $self -> temp_dir() );
+
+	my($field_name, $field_option);
+	my($meta_data);
+	my($store, $store_option);
+
+	for $field_name (keys %field)
+	{
+		$field_option = $field{$field_name};
+
+		# Ensure the caller has provided at least a store key.
+
+		if (! $$field_option{'store'})
+		{
+			confess "You must provide at least the store key for the form field '$field_name'";
+		}
+
+		# Ensure the store key points to a hashref.
+
+		if (ref($$field_option{'store'}) ne 'HASHREF')
+		{
+			confess "You must provide a hashref for the value pointed to by $field_name's 'store' key";
+		}
+
+		# Ensure the generate key, if any, points to a hashref.
+
+		if ($$field_option{'generate'} && (ref($$field_option{'store'}) ne 'HASHREF') )
+		{
+			confess "You must provide a hashref for the value pointed to by $field_name's 'generate' key";
+		}
+
+		# Perform the upload for this field.
+
+		$meta_data = $self -> work($field_name, $temp_file_name);
+
+		# Loop over all store options.
+
+		for $store_option (@{$$field_option{'store'} })
+		{
+			# Ensure a manager is available.
+
+			if (! $$store_option{'manager'})
+			{
+				$store_option{'manager'} = $self -> manager($field_name, $store_option);
+			}
+
+			# Call either the caller's manager or the default manager.
+
+			$$store_option{'manager'} -> new(field_name => $field_name, meta_data => $meta_data, %$store_option);
+		}
+	}
+
+} # End of upload.
+
+# -----------------------------------------------
+
+sub work
+{
+	my($self, $field_name, $temp_file_name) = @_;
+	my($q)         = $self -> query();
 	my($file_name) = $q -> param($field_name);
 
-	my(%result);
+	my($fh);
+	my($mime_type);
 
 	if ($q -> isa('Apache::Request') || $q -> isa('Apache2::Request') )
 	{
-		my($upload)          = $q -> upload($field_name);
-		$result{'fh'}        = $upload -> fh();
-		$result{'mime_type'} = $upload -> type() || '';
+		my($upload) = $q -> upload($field_name);
+		$fh         = $upload -> fh();
+		$mime_type  = $upload -> type() || '';
 	}
 	elsif ($q -> isa('CGI::Simple') )
 	{
-		$result{'fh'}        = $q -> upload($file_name);
-		$result{'mime_type'} = $q -> upload_info($file_name, 'mime') || '';
+		$fh        = $q -> upload($file_name);
+		$mime_type = $q -> upload_info($file_name, 'mime') || '';
 
-		if (! $result{'fh'} && $q -> cgi_error() )
+		if (! $fh && $q -> cgi_error() )
 		{
 			warn $q -> cgi_error();
 
@@ -207,15 +218,15 @@ sub upload
 	}
 	else # It's a CGI.
 	{
-		$result{'fh'}        = $q -> upload($file_field);
-		$result{'mime_type'} = $q -> uploadInfo($$result{'fh'});
+		$fh        = $q -> upload($file_field);
+		$mime_type = $q -> uploadInfo($$result{'fh'});
 
-		if ($result{'mime_type'})
+		if ($mime_type)
 		{
-			$result{'mime_type'} = $$result{'mime_type'}{'Content-Type'};
+			$mime_type = $$mime_type{'Content-Type'};
 		}
 
-		if (! $result{'fh'} && $q -> cgi_error() )
+		if (! $fh && $q -> cgi_error() )
 		{
 			warn $q -> cgi_error();
 
@@ -223,17 +234,19 @@ sub upload
 		}
 	}
 
-	if (! $$result{'fh'})
+	if (! $fh)
 	{
+		warn 'Unable to generate a file handle';
+
 		return undef;
 	}
 
-	binmode($result{'fh'});
-	copy($result{'fh'}, $temp_file_name) || confess "Unable to create temp file '$temp_file_name': $!";
+	binmode($fh);
+	copy($fh, $temp_file_name) || confess "Unable to create temp file '$temp_file_name': $!";
 
 	return {};
 
-} # End of upload.
+} # End of work.
 
 # -----------------------------------------------
 
@@ -248,6 +261,10 @@ CGI::Uploader - Manage CGI uploads using an SQL database
 =head1 Synopsis
 
 	CGI::Uploader -> new
+	(
+		query    => ..., # Optional.
+		temp_dir => ..., # Optional.
+	) -> upload
 	(
 	form_field_1 =>
 	[
@@ -280,27 +297,9 @@ This is the class's contructor.
 
 You must pass a hash to C<new(...)>.
 
-Firstly, you pass a query object in, if you wish, using query => $q.
-
-After that, the keys of this hash are CGI form field names (where the fields are of type I<file>).
-
-Each key points to an arrayref of options which specifies how to process the field.
-
-Note: CGI form field names cannot be I<query> or I<temp_dir>.
-
 Options:
 
 =over 4
-
-=item generate => [...]
-
-Each element of the arrayref pointed to by I<generate> specifies how to generate 1 file based on the uploaded file.
-
-Use multiple elements to generate multiple files, all based on the same uploaded file.
-
-See below for details of I<generate>.
-
-This key is optional.
 
 =item query => $q
 
@@ -324,31 +323,66 @@ If not provided, an object of type C<CGI::Simple> will be created and used to do
 
 This key is optional.
 
+=item temp_dir => 'String'
+
+Note the spelling of I<temp_dir>.
+
+If not provided, an object of type C<File::Spec> will be created and its tmpdir() method called.
+
+This key is optional.
+
+=back
+
+=head1 Method: upload(%hash)
+
+You must pass a hash to C<upload(...)>.
+
+The keys of this hash are CGI form field names (where the fields are of type I<file>).
+
+C<CGI::Uploader> cycles thru these keys, using each one in turn to drive a single upload.
+
+Each key points to an arrayref of options which specifies how to process the field.
+
+The options inside these arrayrefs are specified using hashes, with either 1 or 2 keys.
+See the Synopsis for an example.
+
+Keys:
+
+=over 4
+
+=item generate => [...]
+
+Each element of the arrayref pointed to by I<generate> specifies how to generate 1 file based on the uploaded file.
+
+Use multiple elements to generate multiple files, all based on the same uploaded file.
+
+See below for details of I<generate>.
+
+This key is optional.
+
 =item store => [...]
 
 Each element of the arrayref pointed to by I<store> specifies how to store 1 set of meta-data for the uploaded file.
 
 Use multiple elements to store multiple sets of meta-data, all based on the same uploaded file.
 
+See below for details of I<store>.
+
+This key is mandatory.
+
+=back
+
 In practice, of course, you would normally only store the meta-data once, but an arrayref has been
 deliberately chosen to allow you to store the meta-data in more than one place.
 
 Also, having both I<generate> and I<store> point to arrayrefs reduces the possibility of confusion.
 
-See below for details of I<store>.
-
-This key is mandatory.
-
-Being mandatory means the uploaded file's meta-data I<must> be stored somewhere, but making the I<generate>
+Making I<store> mandatory means the uploaded file's meta-data I<must> be stored somewhere, but making the I<generate>
 key optional means you do not have to transform uploaded files in any way, if you don't wish to.
 
-=item temp_dir => 'String'
+An example:
 
-If not provided, an object of type C<File::Spec> will be created and its tmp_dir() method called.
-
-This key is optional.
-
-=back
+	CGI::Uploader -> new() -> upload(file_name => [store => [{dbh => $dbh, table_name => 'uploads'}] ]);
 
 =head1 The I<generate> key
 
@@ -523,35 +557,24 @@ This key is optional.
 If you provide your own class name here, C<CGI::Uploader> will create an instance of this class
 by calling new(meta_data => $meta_data, field_name => $field_name, %{...}).
 
-I<$field_name> will be the one of the keys in the hash passed in to the constructor.
+I<$field_name> will be the one of the keys in the hash passed in to I<upload()>.
 
-Each key in that hash will cause the manager class to be called once, if I<manager> is specifed.
+Here, I<$meta_data> will be a hashref of options generated by the uploading process, and %{...} will be
+one of the hashrefs in the arrayref pointed to by I<store>.
 
-Here, I<$meta_data> will be a hashref of options, and %{...} will be one of the hashrefs in the arrayref
-pointed to by I<store>.
+Each hashref in the latter arrayref will cause another instance of the manager class - supplied or defaulted -
+to be instantiated and used.
 
-Each hashref in the latter arrayref will cause another instance of this class to be instantiated and used.
-
-If you do not provide the I<dbh> key, I<$dbh> will be '', the empty string.
-
-The same goes for I<$table_name> and I<$sequence_name>.
-
-Note: They are empty strings and not undef because Moose likes things that way for required parameters.
-
-In the case where you provide the I<manager> key, your class is responsible for saving the meta-data.
+In the case you provide the I<manager> key, your class is responsible for saving (or discarding) the meta-data.
 
 See the next section for the definition of the meta-data.
 
-If you do not provide the I<manager> key, C<CGI::Uploader> will create an instance of a built-in class
+If you do not provide the I<manager> key, C<CGI::Uploader> will create an instance of the default manager
 C<CGI::Uploader::Store::Manager> by calling new(meta_data => $meta_data, field_name => $field_name, %{...}).
 
-Each key in the hash pass in to the constructor will cause the default manager class to be called once,
- if I<manager> is not specifed.
+I<$meta_data>, I<$field_name> and %{...} are described a few line above.
 
-I<$field_name>, I<$meta_data> and %{...} are described a few line above.
-
-In this case, the I<dbh> and I<table_name> keys are obviously mandatory (along with I<sequence_name> for
-Postgres), and the default store manager will generate and execute SQL to save the meta-data.
+If the I<manager> key is not supplied, the default store manager will generate and execute SQL to save the meta-data.
 
 =item sequence_name => 'String'
 
@@ -579,9 +602,11 @@ I<table_name> must be passed in to the default manager C<CGI::Uploader::Store::M
 
 =back
 
+=head1 Sample Code
+
 The simplest option, then, is to use
 
-	store => [{dbh => $dbh, table_name => 'uploads'}]
+	CGI::Uploader -> new() -> upload(file_name => [store => [{dbh => $dbh, table_name => 'uploads'}] ]);
 
 and let C<CGI::Uploader> do all the work.
 
@@ -609,7 +634,7 @@ V 3 is available from github: git:github.com/ronsavage/cgi--uploader.git
 
 V 2 was written by Mark Stosberg <mark@summersault.com>.
 
-V 3 is by Mark Stosberg and Ron Savage <ron@savage.net.au>.
+V 3 was by Mark Stosberg and Ron Savage <ron@savage.net.au>.
 
 Ron's home page: http://savage.net.au/index.html
 
