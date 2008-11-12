@@ -144,7 +144,7 @@ The I<store> key points to an arrayref of hashrefs.
 
 Use multiple elements to store multiple sets of meta-data, all based on the same uploaded file.
 
-Each hashref contains 1 .. 3 of the following keys:
+Each hashref contains 1 .. 5 of the following keys:
 
 =over 4
 
@@ -181,10 +181,51 @@ If you omit any keys from your map, the corresponding meta-data will not be stor
 The client_file_name is the name supplied by the web client to C<CGI::Uploader>. It may
 I<or may not> have path information prepended, depending on the web client.
 
+=item Extension
+
+This is provided by the C<File::Basename> module.
+
+The extension is a string I<without> the dot.
+
+If an extension cannot be determined, the value will be '', the empty string.
+
+=item Height
+
+If the uploaded or generated file is recognized as an image, this field will hold its height.
+
+For non-image files, the value will be 0.
+
+=item Id
+
+The id is (presumably) the primary key of your table.
+
+=item MIME type
+
+This is provided by the I<MIME::Types> module, if it can determine the type.
+
+If not, it is '', the empty string.
+
+=item Parent id
+
+This is populated when a file is generated from the uploaded file. It's value will be the id of
+the upload file's record.
+
+For the uploaded file itself, the value will be 0.
+
 =item Server file name
 
 The server_file_name is the name under which the file is finally stored on the file system
 of the web server. It is not the temporary file name used during the upload process.
+
+=item Size
+
+This is the file size in bytes.
+
+=item Width
+
+If the uploaded or generated file is recognized as an image, this field will hold its width.
+
+For non-image files, the value will be 0.
 
 =back
 
@@ -198,7 +239,7 @@ code as the storage manager. If you do provide the I<dbh> key, it is passed in t
 just in case you need it.
 
 This key is mandatory if you do not use the I<manager> key, since without the I<manager> key
-$dbh must be passed in to the default manager C<CGI::Uploader::Store::Manager>.
+I<dbh> must be passed in to the default manager C<CGI::Uploader::Store::Manager>.
 
 =item manager => 'String'
 
@@ -207,24 +248,55 @@ This is the name of a class which will manage the transfer of meta-data to stora
 This key is optional.
 
 If you provide your own class name here, C<CGI::Uploader> will create an instance of this class
-by calling new($dbh, $meta_data), where $meta_data will be a hashref of options.
+by calling new($meta_data, $dbh, $table_name, $sequence_name), where $meta_data will be a hashref of options.
 
-If you do not provide the I<dbh> key, $dbh will be undef.
+If you do not provide the I<dbh> key, $dbh will be undef. The same goes for $table_name and $sequence_name.
 
 In the case where you provide the I<manager> key, your class is responsible for saving the meta-data.
 
 See the next section for the definition of the meta-data.
 
 If you do not provide the I<manager> key, C<CGI::Uploader> will create an instance of a
-built-in class C<CGI::Uploader::Store::Manager> by calling new($dbh, $meta_data).
+built-in class C<CGI::Uploader::Store::Manager> by calling new($meta_data, $dbh, $table_name, $sequence_name).
 
-In this case, the I<dbh> key is obviously mandatory, and the default store manager will generate
-and execute SQL to save the meta-data.
+In this case, the I<dbh> and I<table_name> keys are obviously mandatory (along with I<sequence_name> for
+Postgres), and the default store manager will generate and execute SQL to save the meta-data.
+
+=item sequence_name => 'String'
+
+This is the name of the sequence used to generate values for the primary key of the table.
+
+You would normally only need this when using Postgres.
+
+This key is optional if you use the I<manager> key, since in that case you can use your own
+code as the storage manager. If you do provide the I<sequence_name> key, it is passed in to your manager
+just in case you need it.
+
+This key is mandatory if you use Postgres and do not use the I<manager> key, since without the I<manager> key
+I<sequence_name> must be passed in to the default manager C<CGI::Uploader::Store::Manager>.
+
+=item table_name => 'String'
+
+This is the name of the table into which to store the meta-data.
+
+This key is optional if you use the I<manager> key, since in that case you can use your own
+code as the storage manager. If you do provide the I<table_name> key, it is passed in to your manager
+just in case you need it.
+
+This key is mandatory if you do not use the I<manager> key, since without the I<manager> key
+I<table_name> must be passed in to the default manager C<CGI::Uploader::Store::Manager>.
 
 =back
 
-The simplest option, then, is to use store => [{dbh => $dbh}], and let C<CGI::Uploader> do all
-the work.
+The simplest option, then, is to use
+
+	store => [{dbh => $dbh, table_name => 'uploads'}]
+
+and let C<CGI::Uploader> do all the work.
+
+For Postgres, make that
+
+	store => [{dbh => $dbh, sequence_name => 'uploads_id_seq', table_name => 'uploads'}]
 
 =head1 Meta-data
 
