@@ -9,8 +9,8 @@ our $VERSION = '3.00';
 
 # -----------------------------------------------
 
-has generate => (is => 'rw', required => 0, predicate => 'has_generate', isa => 'HashRef');
-has store    => (is => 'rw', required => 1, isa => 'HashRef');
+has generate => (is => 'rw', required => 0, predicate => 'has_generate', isa => 'ArrayRef');
+has store    => (is => 'rw', required => 1, isa => 'ArrayRef');
 
 # -----------------------------------------------
 
@@ -18,24 +18,30 @@ sub BUILD
 {
 	my($self) = @_;
 
-	# Test 1: One parameter, at least, must be specified.
+	my($store);
 
-	if (! $self -> has_form_fields() || $self -> has_generate() || $self -> has_store() || $self -> has_upload)
+	for $store (@{$self -> store()})
 	{
-		confess 'You must provide at least one of form_fields, generate, store or upload';
+		if (! ($$store{'dbh'} || $$store{'dsn'}) )
+		{
+			confess 'You must provide one of dbh or dsn';
+		}
+
+		if (! $$store{'table_name'})
+		{
+			confess 'You must provide a table_name';
+		}
+
+		$self -> run($store);
 	}
 
-	# Test 2: One CGI form field name, at least must be specified,
-	# using either form_fields => {} or upload => {}.
+}	# End of BUILD.
 
-	my(@field_names);
+# -----------------------------------------------
 
-	if ($self -> has_form_fields() )
-	{
-		@field_names = keys %{$self -> form_fields()};
-	}
-
-	my($store) = $self -> store();
+sub run
+{
+	my($self, $store) = @_;
 
 	if (! $$store{'column_map'})
 	{
@@ -52,17 +58,23 @@ sub BUILD
 			size             => 'size',
 			width            => 'width',
 		};
-
-		$self -> store($store);
 	}
 
-}	# End of BUILD.
+	if (! $$store{'sequence_name'})
+	{
+		$$store{'sequence_name'} = '';
+	}
 
-# -----------------------------------------------
+	if ($$store{'manager'})
+	{
+		$$store{'manager'} -> new(meta_data => {}, %$store);
+	}
+	else
+	{
+		require CGI::Uploader::Store::Manager;
 
-sub run
-{
-	my($self) = @_;
+		CGI::Uploader::Store::Manager -> new(meta_data => {}, %$store});
+	}
 
 } # End of run.
 
