@@ -3,7 +3,7 @@ package CGI::Up;
 use strict;
 use warnings;
 
-use File::Copy;
+use File::Copy; # For copy.
 use File::Temp 'tempfile';
 
 use Squirrel;
@@ -42,12 +42,16 @@ sub BUILD
 
 		if (! $ok)
 		{
-			coonfess 'Your query object must be one of these types: ' . join(', ', @type);
+			confess 'Your query object must be one of these types: ' . join(', ', @type);
 		}
 	}
 	else
 	{
 		require CGI::Simple;
+
+		# Duplicate code to stop a Perl warning.
+
+		$CGI::Simple::DISABLE_UPLOADS = $CGI::Simple::DISABLE_UPLOADS = 0;
 
 		$self -> query(CGI::Simple -> new() );
 	}
@@ -58,6 +62,8 @@ sub BUILD
 	{
 		$self -> temp_dir(File::Spec -> tmpdir() );
 	}
+
+	warn __PACKAGE__ . '. Leaving BUILD';
 
 }	# End of BUILD.
 
@@ -126,6 +132,8 @@ sub manager
 
 	return 'CGI::Uploader::Store::Manager';
 
+	warn __PACKAGE__ . '. Leaving manager';
+
 } # End of manager.
 
 # -----------------------------------------------
@@ -176,7 +184,7 @@ sub upload
 
 			if (! $$store_option{'manager'})
 			{
-				$store_option{'manager'} = $self -> manager($field_name, $store_option);
+				$$store_option{'manager'} = $self -> manager($field_name, $store_option);
 			}
 
 			# Call either the caller's manager or the default manager.
@@ -184,6 +192,8 @@ sub upload
 			$$store_option{'manager'} -> new(field_name => $field_name, meta_data => $meta_data, %$store_option);
 		}
 	}
+
+	warn __PACKAGE__ . '. Leaving upload';
 
 } # End of upload.
 
@@ -218,8 +228,8 @@ sub work
 	}
 	else # It's a CGI.
 	{
-		$fh        = $q -> upload($file_field);
-		$mime_type = $q -> uploadInfo($$result{'fh'});
+		$fh        = $q -> upload($field_name);
+		$mime_type = $q -> uploadInfo($fh);
 
 		if ($mime_type)
 		{
@@ -243,6 +253,8 @@ sub work
 
 	binmode($fh);
 	copy($fh, $temp_file_name) || confess "Unable to create temp file '$temp_file_name': $!";
+
+	warn __PACKAGE__ . '. Leaving work';
 
 	return {};
 
