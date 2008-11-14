@@ -9,13 +9,7 @@ our $VERSION = '2.90';
 
 # -----------------------------------------------
 
-has column_map    => (is => 'rw', required => 1, isa => 'HashRef');
-has dbh           => (is => 'rw', required => 0, isa => 'Any');
-has dsn           => (is => 'rw', required => 0, isa => 'ArrayRef');
-has field_name    => (is => 'rw', required => 1, isa => 'Str');
-has meta_data     => (is => 'rw', required => 1, isa => 'HashRef');
-has sequence_name => (is => 'rw', required => 0, isa => 'Any');
-has table_name    => (is => 'rw', required => 1, isa => 'Any');
+has dbh => (is => 'rw', required => 0, isa => 'Any');
 
 # -----------------------------------------------
 
@@ -23,42 +17,40 @@ sub BUILD
 {
 	my($self) = @_;
 
-	my($meta_data) = $self -> meta_data();
-
-	warn "meta_data: $_ => $$meta_data{$_}" for sort keys %$meta_data;
-
 }	# End of BUILD.
 
 # -----------------------------------------------
 
 sub process
 {
-	my($self) = @_;
-	my($dbh)  = $self -> dbh();
+	my($self, $field_name, $meta_data, %store_option) = @_;
+	my($dbh)  = $store_option{'dbh'};
 
 	# Use either the caller's dbh or fabricate one.
 
-	if (! $dbh)
+	if ($dbh)
+	{
+		$self -> dbh($dbh);
+	}
+	else
 	{
 		# CGI::Uploader checked that at least one of dbh and dsn was specified.
 		# So, we don't need to call $self -> has_dsn() here.
 
 		require DBI;
 
-		$dbh = DBI -> connect(@{$self -> dsn()});
+		$self -> dbh(DBI -> connect(@{$store_option{'dsn'} }) );
 	}
 
-	my($column_map) = $self -> column_map();
-	my($db_server)  = $dbh -> get_info(17);
-	my($meta_data)  = $self -> meta_data();
-	my($sql)        = 'insert into ' . $self -> table_name();
+	my($db_server) = $self -> dbh() -> get_info(17);
+	my($sql)       = "insert into $store_option{'table_name'}";
 
 	# Ensure, if the caller is using Postgres, and they want the id field populated,
 	# that we stuff the next value from the callers' sequence into it.
 
-	if ( ($db_server eq 'PostgreSQL') && ($$column_map{'id'}) )
+	if ( ($db_server eq 'PostgreSQL') && $store_option{'column_map'}{'id'})
 	{
-		$$meta_data{$$column_map{'id'} } = $dbh -> selectrow_array("select nextval('" . $self -> sequence_name() . "')");
+		$$meta_data{'id'} = $self -> dbh() -> selectrow_array("select nextval('$store_option{'sequence_name'}')");
 	}
 
 	my(@bind);
@@ -73,13 +65,25 @@ sub process
 
 	$sql .= '(' . join(', ', @column) . ') values (' . ('?, ' x $#bind) . '?)';
 
-	warn "SQL: $sql";
-
-	my($sth) = $dbh -> prepare($sql);
+	my($sth) = $self -> dbh() -> prepare($sql);
 
 	$sth -> execute(@bind);
 
+	return $self -> dbh() -> last_insert_id(undef, undef, $store_option{'table_name'}, undef)
+
 } # End of process.
+
+# -----------------------------------------------
+
+sub save
+{
+	my($self, $table_name, $meta_data) = @_;
+	my($sql) = "update $table_name set server_file_name = ? where id = ?";
+	my($sth) = $self -> dbh() -> prepare($sql);
+
+	$sth -> execute($$meta_data{'server_file_name'}, $$meta_data{'id'});
+
+} # End of save.
 
 # -----------------------------------------------
 
