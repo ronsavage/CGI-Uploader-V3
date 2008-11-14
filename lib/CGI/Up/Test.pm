@@ -317,6 +317,7 @@ sub use_cgi_uploader_v3
 				 store =>
 				 [{
 					 dsn           => $self -> config() -> dsn(),
+					 path          => '/tmp',
 					 sequence_name => 'uploads_id_seq',
 					 table_name    => 'uploads',
 				 }],

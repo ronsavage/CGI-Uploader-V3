@@ -4,7 +4,10 @@ use strict;
 use warnings;
 
 use File::Copy; # For copy.
+use File::Spec;
 use File::Temp 'tempfile';
+
+use Params::Validate ':all';
 
 use Squirrel;
 
@@ -63,6 +66,21 @@ sub BUILD
 
 # -----------------------------------------------
 
+sub save
+{
+	my($self, $path, $temp_file_name, $meta_data) = @_;
+	my($server_file_name) = File::Spec -> catdir($path, "$$meta_data{'id'}.xxx");
+
+	copy($temp_file_name, $server_file_name);
+
+	warn "=> Copy from $temp_file_name to $server_file_name";
+
+	return $server_file_name;
+
+} # End of save.
+
+# -----------------------------------------------
+
 sub upload
 {
 	my($self, %field) = @_;
@@ -77,19 +95,41 @@ sub upload
 	{
 		$field_option = $field{$field_name};
 
-		$self -> validate_field_options($field_name, $field_option);
+		$self -> validate_field_options
+		(
+		 $field_name,
+		 generate => $$field_option{'generate'},
+		 store    => $$field_option{'store'},
+		);
 
 		# Perform the upload for this field.
 
 		my($temp_fh, $temp_file_name) = tempfile('CGIuploaderXXXXX', UNLINK => 1, DIR => $self -> temp_dir() );
-
-		$meta_data = $self -> work($field_name, $temp_file_name);
+		$meta_data                    = $self -> work($field_name, $temp_file_name);
+		my($store_count)              = 0;
 
 		# Loop over all store options.
 
 		for $store_option (@{$$field_option{'store'} })
 		{
-			$self -> validate_store_options($field_name, $store_option);
+			$store_count++;
+
+			# Ensure a dbh or dsn was specified.
+
+			if (! ($$store_option{'dbh'} || $$store_option{'dsn'}) )
+			{
+				confess "You must provide at least one of dbh and dsn for form field '$field_name'";
+			}
+
+			$store_option = $self -> validate_store_options
+			(
+			 column_map    => $$store_option{'column_map'},
+			 dbh           => $$store_option{'dbh'},
+			 dsn           => $$store_option{'dsn'},
+			 path          => $$store_option{'path'},
+			 sequence_name => $$store_option{'sequence_name'},
+			 table_name    => $$store_option{'table_name'},
+			);
 
 			# Ensure a manager is available.
 
@@ -97,12 +137,18 @@ sub upload
 			{
 				require CGI::Uploader::Store::Manager;
 
-				$$store_option{'manager'} = CGI::Uploader::Store::Manager -> new(field_name => $field_name, meta_data => $meta_data, %$store_option);
+				$$store_option{'manager'} = CGI::Uploader::Store::Manager -> new();
 			}
 
 			# Call either the caller's manager or the default manager.
 
-			$$store_option{'manager'} -> process();
+			$$meta_data{'id'}               = $$store_option{'manager'} -> process($field_name, $meta_data, %$store_option);
+			$$meta_data{'server_file_name'} = $self -> save($$store_option{'path'}, $temp_file_name, $meta_data);
+
+			if ($store_count == 1)
+			{
+				$$store_option{'manager'} -> save($$store_option{'table_name'}, $meta_data);
+			}
 		}
 
 		File::Temp::cleanup();
@@ -114,28 +160,26 @@ sub upload
 
 sub validate_field_options
 {
-	my($self, $field_name, $field_option) = @_;
+	my($self, $field_name) = (shift, shift);
+	my($called)            = __PACKAGE__ . " with form field '$field_name'";
 
-	# Ensure the caller has provided at least a store key.
-
-	if (! $$field_option{'store'})
-	{
-		confess "You must provide at least the store key for the form field '$field_name'";
-	}
-
-	# Ensure the store key points to a hashref.
-
-	if (ref($$field_option{'store'}) ne 'ARRAY')
-	{
-		confess "You must provide a hashref for the value pointed to by ${field_name}'s 'store' key";
-	}
-
-	# Ensure the generate key, if any, points to a hashref.
-
-	if ($$field_option{'generate'} && (ref($$field_option{'store'}) ne 'ARRAY') )
-	{
-		confess "You must provide a hashref for the value pointed to by $field_name's 'generate' key";
-	}
+	validate_with
+	(
+	 called => $called,
+	 params => \@_,
+	 spec   =>
+	 {
+		 generate =>
+		 {
+			 optional => 1,
+			 type     => UNDEF | ARRAYREF,
+		 },
+		 store =>
+		 {
+			 type => ARRAYREF,
+		 },
+	 },
+	);
 
 } # End of validate_field_options.
 
@@ -143,62 +187,78 @@ sub validate_field_options
 
 sub validate_store_options
 {
-	my($self, $field_name, $store_option) = @_;
+	my($self)  = shift @_;
+	my(%param) = validate
+	(
+	 @_,
+	 {
+		 column_map =>
+		 {
+			 optional => 1,
+			 type     => UNDEF | HASHREF,
+		 },
+		 dbh =>
+		 {
+			 callbacks =>
+			 {
+				 postgres => sub
+				 {
+					 my($result) = 1;
 
-	# Ensure a column map is available.
+					 # If there is a dbh, is the database Postgres,
+					 # and, if so, is the sequence_name provided?
 
-	if (! $$store_option{'column_map'})
+					 if ($$_[0])
+					 {
+						 my($db_server) = $$_[0] -> get_info(17);
+
+						 $result = ($db_server eq 'PostgreSQL') ? $$_[1]{'sequence_name'} : 1;
+					 }
+
+					 return $result;
+				 },
+			 },
+			 optional  => 1,
+		 },
+		 dsn =>
+		 {
+			 optional => 1,
+			 type     => UNDEF | ARRAYREF,
+		 },
+		 path =>
+		 {
+			 type => SCALAR,
+		 },
+		 sequence_name =>
+		 {
+			 optional => 1,
+			 type     => UNDEF | SCALAR,
+		 },
+		 table_name =>
+		 {
+			 type => SCALAR,
+		 },
+	 },
+	);
+
+	# Must do this separately, because when undef is passed in,
+	# Params::Validate does not honour the default clause :-(.
+
+	$param{'column_map'} ||=
 	{
-		$$store_option{'column_map'} =
-		{
-			client_file_name => 'client_file_name',
-			date_stamp       => 'date_stamp',
-			extension        => 'extension',
-			height           => 'height',
-			id               => 'id',
-			mime_type        => 'mime_type',
-			parent_id        => 'parent_id',
-			server_file_name => 'server_file_name',
-			size             => 'size',
-			width            => 'width',
-		};
-	}
+	 client_file_name => 'client_file_name',
+	 date_stamp       => 'date_stamp',
+	 extension        => 'extension',
+	 height           => 'height',
+	 id               => 'id',
+	 mime_type        => 'mime_type',
+	 parent_id        => 'parent_id',
+	 server_file_name => 'server_file_name',
+	 size             => 'size',
+	 width            => 'width',
+	};
 
-	# Ensure a dbh or dsn was specified.
-
-	if (! ($$store_option{'dbh'} || $$store_option{'dsn'}) )
-	{
-		confess "You must provide at least one of dbh and dsn for form field '$field_name'";
-	}
-
-	# Ensure, if the caller is using Postgres, that they specified a sequence_name.
-
-	if ($$store_option{'dbh'})
-	{
-		my($db_server) = $$store_option{'dbh'} -> get_info(17);
-
-		if ($db_server eq 'PostgreSQL')
-		{
-			if (! $$store_option{'sequence_name'})
-			{
-				confess "You must provide a sequence name, when using Postgres, for form field '$field_name'";
-			}
-		}
-	}
-
-	# Ensure the sequence name is not undef.
-
-	if (! $$store_option{'sequence_name'})
-	{
-		$$store_option{'sequence_name'} = '';
-	}
-
-	# Ensure a table name was specified.
-
-	if (! $$store_option{'table_name'})
-	{
-		confess "You must provide a table_name for form field '$field_name'";
-	}
+	return {%param};
 
 } # End of validate_store_options.
 
