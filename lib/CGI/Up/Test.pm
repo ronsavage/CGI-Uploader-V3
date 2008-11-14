@@ -1,8 +1,6 @@
 package CGI::Up::Test;
 
-use CGI::Up;
 use CGI::Up::Config;
-use CGI::Uploader;
 use DBIx::Admin::CreateTable;
 use DBIx::Simple;
 use File::Copy; # For copy.
@@ -33,7 +31,7 @@ sub BUILD
 	$self -> table_name($self -> config() -> table_name() );
 	$self -> web_page(HTML::Template -> new(filename => 'web.page.tmpl', path => $tmpl_path) );
 	$self -> form(HTML::Template -> new(filename => 'form.tmpl', path => $tmpl_path) );
-	$self -> simple(DBIx::Simple -> connect($self -> config() -> dsn(), $self -> config() -> username(), $self -> config() -> password() ) );
+	$self -> simple(DBIx::Simple -> connect(@{$self -> config() -> dsn()}) );
 	$self -> creator(DBIx::Admin::CreateTable -> new(dbh => $self -> simple() -> dbh(), verbose => 0) );
 
 } # End of BUILD.
@@ -56,7 +54,7 @@ extension varchar(255) not null,
 height integer not null,
 mime_type varchar(255) not null,
 parent_id integer not null,
-server_file_name varchar(255) not null,
+server_file_name varchar(255), # Nullable because CGI::Uploader doesn't populate it.
 size integer not null,
 width integer not null
 )
@@ -84,9 +82,6 @@ sub use_cgi
 	require CGI;
 
 	my($q) = CGI -> new();
-
-	$self -> form() -> param(form_action => $self -> config() -> form_action() . '/' . $script);
-	$self -> web_page() -> param(name    => 'CGI V ' . $CGI::VERSION);
 
 	# Handle 1 or 2 files uploaded. See form.tmpl for details.
 
@@ -133,6 +128,8 @@ sub use_cgi
 		}
 	}
 
+	$self -> form() -> param(form_action => $self -> config() -> form_action() . '/' . $script);
+	$self -> web_page() -> param(name    => 'CGI V ' . $CGI::VERSION);
 	$self -> web_page() -> param(content => $self -> form() -> output() );
 
 	print $q -> header(), $self -> web_page() -> output();
@@ -150,9 +147,6 @@ sub use_cgi_simple
 
 	$CGI::Simple::DISABLE_UPLOADS = 0;
 	my($q)                        = CGI::Simple -> new();
-
-	$self -> form() -> param(form_action => $self -> config() -> form_action() . '/' . $script);
-	$self -> web_page() -> param(name    => 'CGI::Simple V ' . $CGI::Simple::VERSION);
 
 	warn 'Submitted params:';
 	warn "$_ => " . $q -> param($_) for $q -> param();
@@ -195,6 +189,8 @@ sub use_cgi_simple
 		}
 	}
 
+	$self -> form() -> param(form_action => $self -> config() -> form_action() . '/' . $script);
+	$self -> web_page() -> param(name    => 'CGI::Simple V ' . $CGI::Simple::VERSION);
 	$self -> web_page() -> param(content => $self -> form() -> output() );
 
 	print $q -> header(), $self -> web_page() -> output();
@@ -206,15 +202,12 @@ sub use_cgi_simple
 sub use_cgi_uploader_v2
 {
 	my($self)   = @_;
-	my($script) = 'use.cgi.uploader.v3.pl';
+	my($script) = 'use.cgi.uploader.v2.pl';
 
-	require CGI::Simple;
+	require CGI;
+	require CGI::Uploader;
 
-	$CGI::Simple::DISABLE_UPLOADS = 0;
-	my($q)                        = CGI::Simple -> new();
-
-	$self -> form() -> param(form_action => $self -> config() -> form_action() . '/' . $script);
-	$self -> web_page() -> param(name    => 'CGI::Uploader V ' . $CGI::Uploader::VERSION);
+	my($q) = CGI -> new();
 
 	# Handle 1 or 2 files uploaded. See form.tmpl for details.
 
@@ -263,8 +256,9 @@ sub use_cgi_uploader_v2
 			 width            => 'width',
 		 },
 		);
-		my(%var)    = $q -> Vars();
-		my($result) = $u -> store_uploads(\%var);
+		my($result) = $u -> store_uploads({$q -> Vars()});
+
+		$self -> form() -> param(error => $q -> cgi_error() );
 
 		# Retrieve data for each uploaded file.
 
@@ -277,9 +271,9 @@ sub use_cgi_uploader_v2
 		for $i (1 .. 2)
 		{
 			$field_name = "file_name_$i";
-			$id         = $$result{"${field_name}_id"};
+			$id         = $$result{"${field_name}_id"} || 0;
 
-			if (! $id)
+			if ($id == 0)
 			{
 				next;
 			}
@@ -294,6 +288,8 @@ sub use_cgi_uploader_v2
 		}
 	}
 
+	$self -> form() -> param(form_action => $self -> config() -> form_action() . '/' . $script);
+	$self -> web_page() -> param(name    => 'CGI::Uploader V ' . $CGI::Uploader::VERSION);
 	$self -> web_page() -> param(content => $self -> form() -> output() );
 
 	print $q -> header(), $self -> web_page() -> output();
@@ -306,16 +302,33 @@ sub use_cgi_uploader_v3
 {
 	my($self)   = @_;
 	my($script) = 'use.cgi.uploader.v3.pl';
-	my($upload) = CGI::Up -> new();
+
+	require CGI;
+	require CGI::Up;
+
+	my($q) = CGI -> new();
+
+	if ($q -> param('file_name_1') )
+	{
+		CGI::Up -> new(query => $q) -> upload
+			(
+			 file_name_1 =>
+			 {
+				 store =>
+				 [{
+					 dsn           => $self -> config() -> dsn(),
+					 sequence_name => 'uploads_id_seq',
+					 table_name    => 'uploads',
+				 }],
+			 },
+			);
+	}
 
 	$self -> form() -> param(form_action => $self -> config() -> form_action() . '/' . $script);
 	$self -> web_page() -> param(name    => 'CGI::Uploader V ' . $CGI::Up::VERSION);
-
-	# -> upload();
-
 	$self -> web_page() -> param(content => $self -> form() -> output() );
 
-	print $upload -> query() -> header(), $self -> web_page() -> output();
+	print $q -> header(), $self -> web_page() -> output();
 
 } # End of use_cgi_uploader_v3.
 

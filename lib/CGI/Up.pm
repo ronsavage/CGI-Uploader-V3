@@ -8,7 +8,7 @@ use File::Temp 'tempfile';
 
 use Squirrel;
 
-our $VERSION = '3.00';
+our $VERSION = '2.90';
 
 # -----------------------------------------------
 
@@ -26,7 +26,7 @@ sub BUILD
 	if ($self -> has_query() )
 	{
 		my($ok)   = 0;
-		my(@type) = (qw/Apache::Request Apache2::Request CGI::Simple CGI/);
+		my(@type) = (qw/Apache::Request Apache2::Request CGI/);
 
 		my($type);
 
@@ -47,13 +47,9 @@ sub BUILD
 	}
 	else
 	{
-		require CGI::Simple;
+		require CGI;
 
-		# Duplicate code to stop a Perl warning.
-
-		$CGI::Simple::DISABLE_UPLOADS = $CGI::Simple::DISABLE_UPLOADS = 0;
-
-		$self -> query(CGI::Simple -> new() );
+		$self -> query(CGI -> new() );
 	}
 
 	# Ensure a temp dir name is available.
@@ -63,13 +59,89 @@ sub BUILD
 		$self -> temp_dir(File::Spec -> tmpdir() );
 	}
 
-	warn __PACKAGE__ . '. Leaving BUILD';
-
 }	# End of BUILD.
 
 # -----------------------------------------------
 
-sub manager
+sub upload
+{
+	my($self, %field) = @_;
+
+	# Loop over the CGI form fields.
+
+	my($field_name, $field_option);
+	my($meta_data);
+	my($store, $store_option);
+
+	for $field_name (keys %field)
+	{
+		$field_option = $field{$field_name};
+
+		$self -> validate_field_options($field_name, $field_option);
+
+		# Perform the upload for this field.
+
+		my($temp_fh, $temp_file_name) = tempfile('CGIuploaderXXXXX', UNLINK => 1, DIR => $self -> temp_dir() );
+
+		$meta_data = $self -> work($field_name, $temp_file_name);
+
+		# Loop over all store options.
+
+		for $store_option (@{$$field_option{'store'} })
+		{
+			$self -> validate_store_options($field_name, $store_option);
+
+			# Ensure a manager is available.
+
+			if (! $$store_option{'manager'})
+			{
+				require CGI::Uploader::Store::Manager;
+
+				$$store_option{'manager'} = CGI::Uploader::Store::Manager -> new(field_name => $field_name, meta_data => $meta_data, %$store_option);
+			}
+
+			# Call either the caller's manager or the default manager.
+
+			$$store_option{'manager'} -> process();
+		}
+
+		File::Temp::cleanup();
+	}
+
+} # End of upload.
+
+# -----------------------------------------------
+
+sub validate_field_options
+{
+	my($self, $field_name, $field_option) = @_;
+
+	# Ensure the caller has provided at least a store key.
+
+	if (! $$field_option{'store'})
+	{
+		confess "You must provide at least the store key for the form field '$field_name'";
+	}
+
+	# Ensure the store key points to a hashref.
+
+	if (ref($$field_option{'store'}) ne 'ARRAY')
+	{
+		confess "You must provide a hashref for the value pointed to by ${field_name}'s 'store' key";
+	}
+
+	# Ensure the generate key, if any, points to a hashref.
+
+	if ($$field_option{'generate'} && (ref($$field_option{'store'}) ne 'ARRAY') )
+	{
+		confess "You must provide a hashref for the value pointed to by $field_name's 'generate' key";
+	}
+
+} # End of validate_field_options.
+
+# -----------------------------------------------
+
+sub validate_store_options
 {
 	my($self, $field_name, $store_option) = @_;
 
@@ -128,74 +200,7 @@ sub manager
 		confess "You must provide a table_name for form field '$field_name'";
 	}
 
-	require CGI::Uploader::Store::Manager;
-
-	return 'CGI::Uploader::Store::Manager';
-
-	warn __PACKAGE__ . '. Leaving manager';
-
-} # End of manager.
-
-# -----------------------------------------------
-
-sub upload
-{
-	my($self, %field)             = @_;
-	my($temp_fh, $temp_file_name) = tempfile('CGIuploaderXXXXX', UNLINK => 1, DIR => $self -> temp_dir() );
-
-	my($field_name, $field_option);
-	my($meta_data);
-	my($store, $store_option);
-
-	for $field_name (keys %field)
-	{
-		$field_option = $field{$field_name};
-
-		# Ensure the caller has provided at least a store key.
-
-		if (! $$field_option{'store'})
-		{
-			confess "You must provide at least the store key for the form field '$field_name'";
-		}
-
-		# Ensure the store key points to a hashref.
-
-		if (ref($$field_option{'store'}) ne 'HASHREF')
-		{
-			confess "You must provide a hashref for the value pointed to by $field_name's 'store' key";
-		}
-
-		# Ensure the generate key, if any, points to a hashref.
-
-		if ($$field_option{'generate'} && (ref($$field_option{'store'}) ne 'HASHREF') )
-		{
-			confess "You must provide a hashref for the value pointed to by $field_name's 'generate' key";
-		}
-
-		# Perform the upload for this field.
-
-		$meta_data = $self -> work($field_name, $temp_file_name);
-
-		# Loop over all store options.
-
-		for $store_option (@{$$field_option{'store'} })
-		{
-			# Ensure a manager is available.
-
-			if (! $$store_option{'manager'})
-			{
-				$$store_option{'manager'} = $self -> manager($field_name, $store_option);
-			}
-
-			# Call either the caller's manager or the default manager.
-
-			$$store_option{'manager'} -> new(field_name => $field_name, meta_data => $meta_data, %$store_option);
-		}
-	}
-
-	warn __PACKAGE__ . '. Leaving upload';
-
-} # End of upload.
+} # End of validate_store_options.
 
 # -----------------------------------------------
 
@@ -214,49 +219,42 @@ sub work
 		$fh         = $upload -> fh();
 		$mime_type  = $upload -> type() || '';
 	}
-	elsif ($q -> isa('CGI::Simple') )
-	{
-		$fh        = $q -> upload($file_name);
-		$mime_type = $q -> upload_info($file_name, 'mime') || '';
-
-		if (! $fh && $q -> cgi_error() )
-		{
-			warn $q -> cgi_error();
-
-			return undef;
-		}
-	}
 	else # It's a CGI.
 	{
 		$fh        = $q -> upload($field_name);
-		$mime_type = $q -> uploadInfo($fh);
+		$mime_type = $q -> uploadInfo($fh) || '';
 
 		if ($mime_type)
 		{
-			$mime_type = $$mime_type{'Content-Type'};
+			$mime_type = $$mime_type{'Content-Type'} || '';
 		}
 
 		if (! $fh && $q -> cgi_error() )
 		{
-			warn $q -> cgi_error();
-
-			return undef;
+			confess $q -> cgi_error();
 		}
 	}
 
 	if (! $fh)
 	{
-		warn 'Unable to generate a file handle';
-
-		return undef;
+		confess 'Unable to generate a file handle';
 	}
 
 	binmode($fh);
 	copy($fh, $temp_file_name) || confess "Unable to create temp file '$temp_file_name': $!";
 
-	warn __PACKAGE__ . '. Leaving work';
-
-	return {};
+	return
+	{
+		client_file_name => $file_name,
+		date_stamp       => 'now()',
+		extension        => '',
+		height           => 0,
+		mime_type        => $mime_type,
+		parent_id        => 0,
+		server_file_name => '',
+		size             => (stat $temp_file_name)[7],
+		width            => 0,
+	};
 
 } # End of work.
 
@@ -327,11 +325,15 @@ This object is expected to belong to one of these classes:
 
 =item CGI
 
-=item CGI::Simple
-
 =back
 
-If not provided, an object of type C<CGI::Simple> will be created and used to do the uploading.
+If not provided, an object of type C<CGI> will be created and used to do the uploading.
+
+Warning: CGI::Simple cannot be supported. See this ticket, which is I<not> resolved:
+
+http://rt.cpan.org/Ticket/Display.html?id=14838
+
+There is a comment in the source code of CGI::Simple about this issue. Search for 14838.
 
 This key is optional.
 
@@ -353,10 +355,9 @@ The keys of this hash are CGI form field names (where the fields are of type I<f
 
 C<CGI::Uploader> cycles thru these keys, using each one in turn to drive a single upload.
 
-Each key points to an arrayref of options which specifies how to process the field.
+Each key points to an hashref of options which specifies how to process the field.
 
-The options inside these arrayrefs are specified using hashes, with either 1 or 2 keys.
-See the Synopsis for an example.
+The keys to these hashrefs are:
 
 Keys:
 

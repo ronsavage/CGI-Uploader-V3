@@ -1,19 +1,19 @@
-package CGI::Up::Store::Manager;
+package CGI::Uploader::Store::Manager;
 
 use strict;
 use warnings;
 
 use Squirrel;
 
-our $VERSION = '3.00';
+our $VERSION = '2.90';
 
 # -----------------------------------------------
 
 has column_map    => (is => 'rw', required => 1, isa => 'HashRef');
 has dbh           => (is => 'rw', required => 0, isa => 'Any');
-has dsn           => (is => 'rw', required => 0, predicate => 'has_dsn', isa => 'ArrayRef');
+has dsn           => (is => 'rw', required => 0, isa => 'ArrayRef');
+has field_name    => (is => 'rw', required => 1, isa => 'Str');
 has meta_data     => (is => 'rw', required => 1, isa => 'HashRef');
-has simple        => (is => 'rw', required => 0, isa => 'DBIx::Simple');
 has sequence_name => (is => 'rw', required => 0, isa => 'Any');
 has table_name    => (is => 'rw', required => 1, isa => 'Any');
 
@@ -23,33 +23,33 @@ sub BUILD
 {
 	my($self) = @_;
 
-	# Use either the caller's dbh or fabricate one.
+	my($meta_data) = $self -> meta_data();
 
-	if ($self -> has_dbh() )
-	{
-		$self -> use_unknown_module();
-	}
-	else
-	{
-		# CGI::Uploader checked that at least one of dbh and dsn was specified.
-		# So, we don't need to call $self -> has_dsn() here.
-
-		require DBIx::Simple;
-
-		$self -> simple(DBIx::Simple -> new(@{$self -> dsn()}) );
-		$self -> dbh($self -> simple() -> dbh() );
-		$self -> use_dbix_simple();
-	}
+	warn "meta_data: $_ => $$meta_data{$_}" for sort keys %$meta_data;
 
 }	# End of BUILD.
 
 # -----------------------------------------------
 
-sub use_dbix_simple
+sub process
 {
-	my($self)       = @_;
+	my($self) = @_;
+	my($dbh)  = $self -> dbh();
+
+	# Use either the caller's dbh or fabricate one.
+
+	if (! $dbh)
+	{
+		# CGI::Uploader checked that at least one of dbh and dsn was specified.
+		# So, we don't need to call $self -> has_dsn() here.
+
+		require DBI;
+
+		$dbh = DBI -> connect(@{$self -> dsn()});
+	}
+
 	my($column_map) = $self -> column_map();
-	my($db_server)  = $self -> dbh() -> get_info(17);
+	my($db_server)  = $dbh -> get_info(17);
 	my($meta_data)  = $self -> meta_data();
 	my($sql)        = 'insert into ' . $self -> table_name();
 
@@ -58,20 +58,28 @@ sub use_dbix_simple
 
 	if ( ($db_server eq 'PostgreSQL') && ($$column_map{'id'}) )
 	{
-		$$meta_data{$$column_map{'id'} } = $self -> dbh() -> selectrow_array("select nextval('" . $self -> sequence_name() . "')");
+		$$meta_data{$$column_map{'id'} } = $dbh -> selectrow_array("select nextval('" . $self -> sequence_name() . "')");
 	}
 
-	$self -> simple() -> iquery($sql, $meta_data);
+	my(@bind);
+	my(@column);
+	my($key);
 
-} # End of use_dbix_simple.
+	for $key (keys %$meta_data)
+	{
+		push @column, $key;
+		push @bind, $$meta_data{$key};
+	}
 
-# -----------------------------------------------
+	$sql .= '(' . join(', ', @column) . ') values (' . ('?, ' x $#bind) . '?)';
 
-sub use_unknown_module
-{
-	my($self) = @_;
+	warn "SQL: $sql";
 
-} # End of use_unknown_module.
+	my($sth) = $dbh -> prepare($sql);
+
+	$sth -> execute(@bind);
+
+} # End of process.
 
 # -----------------------------------------------
 
