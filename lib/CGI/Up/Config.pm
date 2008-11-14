@@ -14,48 +14,43 @@ our $VERSION = '1.00';
 # -----------------------------------------------
 
 has config      => (is => 'rw', isa => 'Config::IniFiles');
-has dsn         => (is => 'rw', isa => 'Str');
+has dsn         => (is => 'rw', isa => 'ArrayRef');
 has form_action => (is => 'rw', isa => 'Str');
-has password    => (is => 'rw', isa => 'Str');
-has section     => (is => 'rw', isa => 'Str');
 has table_name  => (is => 'rw', isa => 'Str');
 has tmpl_path   => (is => 'rw', isa => 'Str');
-has username    => (is => 'rw', isa => 'Str');
 
 # -----------------------------------------------
 
 sub BUILD
 {
-	my($self) = @_;
-	my($name) = '.htcgiup.conf';
-	my($path) = $INC{'CGI/Up/Config.pm'};
-	$path     =~ s/Config.pm/$name/;
+	my($self)    = @_;
+	my($name)    = '.htcgiup.conf';
+	my($path)    = $INC{'CGI/Up/Config.pm'};
+	$path        =~ s/Config.pm/$name/;
+	my($section) = 'global';
 
 	# Check [global].
 
 	$self -> config(Config::IniFiles -> new(-file => $path) );
-	$self -> section('global');
 
-	if (! $self -> config() -> SectionExists($self -> section() ) )
+	if (! $self -> config() -> SectionExists($section) )
 	{
-		Carp::croak "Config file '$path' does not contain the section [" . $self -> section() . ']';
+		Carp::croak "Config file '$path' does not contain the section [$section]";
 	}
 
 	# Check [x] where x is host=x within [global].
 
-	$self -> section($self -> config() -> val($self -> section(), 'host') );
+	$section = $self -> config() -> val($section, 'host');
 
-	if (! $self -> config() -> SectionExists($self -> section() ) )
+	if (! $self -> config() -> SectionExists($section) )
 	{
-		Carp::croak "Config file '$path' does not contain the section [" . $self -> section() . ']';
+		Carp::croak "Config file '$path' does not contain the section [$section]";
 	}
 
-	$self -> dsn($self -> config() -> val($self -> section(), 'dsn') );
-	$self -> form_action($self -> config() -> val($self -> section(), 'form_action') );
-	$self -> password($self -> config() -> val($self -> section(), 'password') );
-	$self -> table_name($self -> config() -> val($self -> section(), 'table_name') );
-	$self -> tmpl_path($self -> config() -> val($self -> section(), 'tmpl_path') );
-	$self -> username($self -> config() -> val($self -> section(), 'username') );
+	$self -> dsn([map{$self -> config() -> val($section, $_)} (qw/dsn username password/)]);
+	$self -> form_action($self -> config() -> val($section, 'form_action') );
+	$self -> table_name($self -> config() -> val($section, 'table_name') );
+	$self -> tmpl_path($self -> config() -> val($section, 'tmpl_path') );
 
 }	# End of BUILD.
 
