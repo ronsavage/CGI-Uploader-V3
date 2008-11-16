@@ -13,7 +13,7 @@ our $VERSION = '3.00';
 
 has config     => (is => 'rw', required => 0, isa => 'CGI::Up::Config');
 has creator    => (is => 'rw', required => 0, isa => 'DBIx::Admin::CreateTable');
-has dsh        => (is => 'rw', required => 0, isa => 'Any');
+has dbh        => (is => 'rw', required => 0, isa => 'Any');
 has form       => (is => 'rw', required => 0, isa => 'HTML::Template');
 has table_name => (is => 'rw', required => 0, isa => 'Str');
 has web_page   => (is => 'rw', required => 0, isa => 'HTML::Template');
