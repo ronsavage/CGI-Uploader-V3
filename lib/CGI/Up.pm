@@ -585,8 +585,8 @@ If you do provide the I<dbh> key, it is passed in to your manager just in case y
 
 Also, if you provide I<dbh>, the I<dsn> key, below, is ignored.
 
-If you do not provide the I<dbh> key, the default manager uses the I<dsn> arrayref to create an
-object of type C<DBIx::Simple>, and uses its I<dbh>.
+If you do not provide the I<dbh> key, the default manager uses the I<dsn> arrayref to create a
+dbh via C<DBI>.
 
 =item dsn => [...]
 
@@ -618,7 +618,7 @@ This element is optional.
 
 =back
 
-The default manager class calls DBIx::Simple -> new(@$dsn) to connect to the database, i.e. in order
+The default manager class calls DBI -> connect(@$dsn) to connect to the database, i.e. in order
 to generate a I<dbh>, when you don't provide a I<dbh> key.
 
 =item manager => 'String'

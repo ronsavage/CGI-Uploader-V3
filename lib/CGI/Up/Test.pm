@@ -1,8 +1,8 @@
 package CGI::Up::Test;
 
 use CGI::Up::Config;
+use DBI;
 use DBIx::Admin::CreateTable;
-use DBIx::Simple;
 use File::Copy; # For copy.
 use HTML::Template;
 use Squirrel;
@@ -13,8 +13,8 @@ our $VERSION = '3.00';
 
 has config     => (is => 'rw', required => 0, isa => 'CGI::Up::Config');
 has creator    => (is => 'rw', required => 0, isa => 'DBIx::Admin::CreateTable');
+has dsh        => (is => 'rw', required => 0, isa => 'Any');
 has form       => (is => 'rw', required => 0, isa => 'HTML::Template');
-has simple     => (is => 'rw', required => 0, isa => 'DBIx::Simple');
 has table_name => (is => 'rw', required => 0, isa => 'Str');
 has web_page   => (is => 'rw', required => 0, isa => 'HTML::Template');
 
@@ -31,8 +31,8 @@ sub BUILD
 	$self -> table_name($self -> config() -> table_name() );
 	$self -> web_page(HTML::Template -> new(filename => 'web.page.tmpl', path => $tmpl_path) );
 	$self -> form(HTML::Template -> new(filename => 'form.tmpl', path => $tmpl_path) );
-	$self -> simple(DBIx::Simple -> connect(@{$self -> config() -> dsn()}) );
-	$self -> creator(DBIx::Admin::CreateTable -> new(dbh => $self -> simple() -> dbh(), verbose => 0) );
+	$self -> dbh(DBI -> connect(@{$self -> config() -> dsn()}) );
+	$self -> creator(DBIx::Admin::CreateTable -> new(dbh => $self -> dbh(), verbose => 0) );
 
 } # End of BUILD.
 
@@ -236,7 +236,7 @@ sub use_cgi_uploader_v2
 
 		my($u) = CGI::Uploader -> new
 		(
-		 dbh          => $self -> simple() -> dbh(),
+		 dbh          => $self -> dbh(),
 		 file_scheme  => 'simple',
 		 query        => $q,
 		 spec         => $file_list,
@@ -279,7 +279,7 @@ sub use_cgi_uploader_v2
 			}
 
 			$sql       = "select * from $table_name where id = $id";
-			$meta_data = $self -> simple() -> dbh() -> selectrow_hashref($sql);
+			$meta_data = $self -> dbh() -> selectrow_hashref($sql);
 
 			$self -> form() -> param("original_file_name_$i" => $$meta_data{'client_file_name'});
 			$self -> form() -> param("uploaded_file_name_$i" => $$meta_data{'server_file_name'});

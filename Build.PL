@@ -19,7 +19,6 @@ Module::Build -> new
 	 DBD::Pg                  => 0,
 	 DBI                      => 0,
 	 DBIx::Admin::CreateTable => 0,
-	 DBIx::Simple             => 0,
 	 HTML::Template           => 0,
  },
 ) -> create_build_script();
