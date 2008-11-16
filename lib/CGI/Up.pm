@@ -95,13 +95,6 @@ sub upload
 	{
 		$field_option = $field{$field_name};
 
-		$self -> validate_field_options
-		(
-		 $field_name,
-		 generate => $$field_option{'generate'},
-		 store    => $$field_option{'store'},
-		);
-
 		# Perform the upload for this field.
 
 		my($temp_fh, $temp_file_name) = tempfile('CGIuploaderXXXXX', UNLINK => 1, DIR => $self -> temp_dir() );
@@ -110,7 +103,7 @@ sub upload
 
 		# Loop over all store options.
 
-		for $store_option (@{$$field_option{'store'} })
+		for $store_option (@$field_option)
 		{
 			$store_count++;
 
@@ -155,33 +148,6 @@ sub upload
 	}
 
 } # End of upload.
-
-# -----------------------------------------------
-
-sub validate_field_options
-{
-	my($self, $field_name) = (shift, shift);
-	my($called)            = __PACKAGE__ . " with form field '$field_name'";
-
-	validate_with
-	(
-	 called => $called,
-	 params => \@_,
-	 spec   =>
-	 {
-		 generate =>
-		 {
-			 optional => 1,
-			 type     => UNDEF | ARRAYREF,
-		 },
-		 store =>
-		 {
-			 type => ARRAYREF,
-		 },
-	 },
-	);
-
-} # End of validate_field_options.
 
 # -----------------------------------------------
 

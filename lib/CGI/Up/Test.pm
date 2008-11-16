@@ -54,7 +54,7 @@ extension varchar(255) not null,
 height integer not null,
 mime_type varchar(255) not null,
 parent_id integer not null,
-server_file_name varchar(255), # Nullable because CGI::Uploader doesn't populate it.
+server_file_name varchar(255),
 size integer not null,
 width integer not null
 )
@@ -313,15 +313,12 @@ sub use_cgi_uploader_v3
 		CGI::Up -> new(query => $q) -> upload
 			(
 			 file_name_1 =>
-			 {
-				 store =>
-				 [{
-					 dsn           => $self -> config() -> dsn(),
-					 path          => '/tmp',
-					 sequence_name => 'uploads_id_seq',
-					 table_name    => 'uploads',
-				 }],
-			 },
+			 [{
+				 dsn           => $self -> config() -> dsn(),
+				 path          => '/tmp',
+				 sequence_name => 'uploads_id_seq',
+				 table_name    => 'uploads',
+			 }],
 			);
 	}
 
