@@ -1,6 +1,6 @@
-package CGI::Up::Test;
+package CGI::Uploader::Test;
 
-use CGI::Up::Config;
+use CGI::Uploader::Config;
 use DBI;
 use DBIx::Admin::CreateTable;
 use File::Copy; # For copy.
@@ -11,7 +11,7 @@ our $VERSION = '3.00';
 
 # -----------------------------------------------
 
-has config     => (is => 'rw', required => 0, isa => 'CGI::Up::Config');
+has config     => (is => 'rw', required => 0, isa => 'CGI::Uploader::Config');
 has creator    => (is => 'rw', required => 0, isa => 'DBIx::Admin::CreateTable');
 has dbh        => (is => 'rw', required => 0, isa => 'Any');
 has form       => (is => 'rw', required => 0, isa => 'HTML::Template');
@@ -24,7 +24,7 @@ sub BUILD
 {
 	my($self) = @_;
 
-	$self -> config(CGI::Up::Config -> new() );
+	$self -> config(CGI::Uploader::Config -> new() );
 
 	my($tmpl_path) = $self -> config() -> tmpl_path();
 

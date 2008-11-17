@@ -1101,7 +1101,18 @@ If you use C<CGI::Uploader::Test>, it uses C<CGI::Uploader::Config>, which uses 
 
 I (Ron) used Postgres when writing and testing V 3, and hence I used C<DBD::Pg>.
 
-Examine lib/CGI/Uploader/.htcgiup.conf for details. This file is read in by C<CGI::Uploader::Config>.
+Examine lib/CGI/Uploader/.ht.cgi.uploader.conf for details. This file is read in by C<CGI::Uploader::Config>.
+
+=item DBD::SQLite
+
+A quick test with SQLite worked, too.
+
+The test only requires changing .ht.cgi.uploader.conf and re-running scripts/create.table.pl. E.g.:
+
+	dsn=dbi:SQLite:dbname=/tmp/test
+	password=
+	table_name=uploads
+	username=
 
 =item DBI
 

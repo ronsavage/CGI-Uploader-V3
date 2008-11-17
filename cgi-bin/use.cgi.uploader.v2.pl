@@ -11,8 +11,8 @@ use lib '/home/ron/perl.modules/CGI-Up/lib';
 use strict;
 use warnings;
 
-use CGI::Up::Test;
+use CGI::Uploader::Test;
 
 # ----------------
 
-CGI::Up::Test -> new() -> use_cgi_uploader_v2();
+CGI::Uploader::Test -> new() -> use_cgi_uploader_v2();

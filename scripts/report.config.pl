@@ -6,11 +6,11 @@
 use strict;
 use warnings;
 
-use CGI::Up::Config;
+use CGI::Uploader::Config;
 
 # --------------------------------
 
-my($config) = CGI::Up::Config -> new();
+my($config) = CGI::Uploader::Config -> new();
 
 print 'dsn:         ', $config -> dsn(), ". \n";
 print 'form_action: ', $config -> form_action(), ". \n";

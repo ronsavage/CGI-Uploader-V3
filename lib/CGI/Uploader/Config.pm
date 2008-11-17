@@ -1,4 +1,4 @@
-package CGI::Up::Config;
+package CGI::Uploader::Config;
 
 use strict;
 use warnings;
@@ -24,7 +24,7 @@ has tmpl_path   => (is => 'rw', isa => 'Str');
 sub BUILD
 {
 	my($self)    = @_;
-	my($name)    = '.htcgiup.conf';
+	my($name)    = '.ht.cgi.uploader.conf';
 	my($path)    = $INC{'CGI/Up/Config.pm'};
 	$path        =~ s/Config.pm/$name/;
 	my($section) = 'global';

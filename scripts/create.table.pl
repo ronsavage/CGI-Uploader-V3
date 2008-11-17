@@ -6,11 +6,11 @@
 use strict;
 use warnings;
 
-use CGI::Up::Test;
+use CGI::Uploader::Test;
 
 # --------------------------------
 
-my($creator) = CGI::Up::Test -> new();
+my($creator) = CGI::Uploader::Test -> new();
 
 print "Creating tables for database 'test'. \n";
 

@@ -4,7 +4,7 @@ This is the INSTALL file for CGI::Up, the intermediate version of CGI::Uploader 
 
 Using the name CGI::Up allows us to have both modules installed side-by-side.
 
-Indeed, the test code for CGI::Up uses CGI::Uploader. See CGI::Up::Test.
+Indeed, the test code for CGI::Up uses CGI::Uploader. See CGI::Uploader::Test.
 
 Installation
 ------------
@@ -61,7 +61,7 @@ This uses lib/CGI/Up/.htcgiup.conf.
 7)
 Point your web client (Firefox) at /cgi-bin/use.cgi.simple.pl
 
-Note: neither CGI::Simple nor CGI::Up::Test's method use_cgi_simple
+Note: neither CGI::Simple nor CGI::Uploader::Test's method use_cgi_simple
 outputs to the database.
 
 8)
