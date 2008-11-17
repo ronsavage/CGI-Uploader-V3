@@ -1085,6 +1085,47 @@ This value is 0 until the I<imager> object is called to process the permanent fi
 
 =back
 
+=head1 Modules Used and Required
+
+Both Build.PL and Makefile.PL list the modules used by C<CGI::Uploader>.
+
+Further to those, user options can trigger the use of these modules:
+
+=over 4
+
+=item Config::IniFiles
+
+If you use C<CGI::Uploader::Test>, it uses C<CGI::Uploader::Config>, which uses C<Config::IniFiles>.
+
+=item DBD::Pg
+
+I (Ron) used Postgres when writing and testing V 3, and hence I used C<DBD::Pg>.
+
+Examine lib/CGI/Uploader/.htcgiup.conf for details. This file is read in by C<CGI::Uploader::Config>.
+
+=item DBI
+
+If you do not specify a I<manager> object, C<CGI::Uploader> uses C<DBI>.
+
+=item DBIx::Admin::CreateTable
+
+If you use C<CGI::Uploader::Test> to create the table, via scripts/create.table.pl, you'll need
+C<DBIx::Admin::CreateTable>.
+
+=item Digest::MD5
+
+If you set the I<file_scheme> option to I<md5>, you'll need C<Digest::MD5>.
+
+=item HTML::Template
+
+If you want to run any of the test scripts in cgi-bin/, you'll need C<HTML::Template>.
+
+=item Image::Size
+
+If you do not specify an I<imager> object, you'll need C<Image::Size>.
+
+=back
+
 =head1 Changes
 
 See Changes and Changelog.ini. The latter is machine-readable, using Module::Metadata::Changes.
