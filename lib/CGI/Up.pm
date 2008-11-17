@@ -118,7 +118,7 @@ sub do_insert
 
 	for $key (keys %$meta_data)
 	{
-		push @column, $key;
+		push @column, $store_option{'column_map'}{$key};
 		push @bind, $$meta_data{$key};
 	}
 
@@ -136,11 +136,11 @@ sub do_insert
 
 sub do_update
 {
-	my($self, $table_name, $meta_data) = @_;
-	my($sql) = "update $table_name set server_file_name = ?, height = ?, width = ? where id = ?";
+	my($self, $meta_data, %store_option) = @_;
+	my($sql) = "update $store_option{'table_name'} set server_file_name = ?, height = ?, width = ? where id = ?";
 	my($sth) = $self -> dbh() -> prepare($sql);
 
-	$sth -> execute($$meta_data{'server_file_name'}, $$meta_data{'height'}, $$meta_data{'width'}, $$meta_data{'id'});
+	$sth -> execute($$meta_data{'server_file_name'}, $$meta_data{'height'}, $$meta_data{'width'}, $store_option{'column_map'}{'id'});
 
 } # End of do_update.
 
@@ -329,7 +329,7 @@ sub upload
 			if ($store_count == 1)
 			{
 				$$store_option{'imager'} -> get_size($meta_data);
-				$$store_option{'manager'} -> do_update($$store_option{'table_name'}, $meta_data);
+				$$store_option{'manager'} -> do_update($meta_data, %$store_option);
 			}
 		}
 
