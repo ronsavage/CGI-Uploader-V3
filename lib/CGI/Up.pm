@@ -1114,6 +1114,9 @@ The test only requires changing .ht.cgi.uploader.conf and re-running scripts/cre
 	table_name=uploads
 	username=
 
+Also, after running scripts/create.table.pl, use 'sudo chmod a+w /tmp/test' so that the Apache daemon can
+write to the database.
+
 =item DBI
 
 If you do not specify a I<manager> object, C<CGI::Uploader> uses C<DBI>.

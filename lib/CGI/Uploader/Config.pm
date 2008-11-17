@@ -25,7 +25,7 @@ sub BUILD
 {
 	my($self)    = @_;
 	my($name)    = '.ht.cgi.uploader.conf';
-	my($path)    = $INC{'CGI/Up/Config.pm'};
+	my($path)    = $INC{'CGI/Uploader/Config.pm'};
 	$path        =~ s/Config.pm/$name/;
 	my($section) = 'global';
 
