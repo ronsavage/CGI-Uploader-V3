@@ -336,21 +336,27 @@ sub use_cgi_uploader_v3
 			 )} sort @file_name
 			);
 
-		my($count) = - 1;
+		my($dbh) = DBI -> connect(@{$self -> config() -> dsn()});
+		my($sth) = $dbh -> prepare('select * from uploads where id = ?');
 
+		my($data);
 		my($i);
-		my($j);
+		my($md);
 
-		for $i (sort @file_name)
+		for $md (@$meta_data)
 		{
-			$count++;
+			$sth -> execute($$md{'id'});
 
-			($j = $i) =~ s/.+_(\d)$/$1/;
+			$data = $sth -> fetchrow_hashref();
 
-			$self -> form() -> param("original_file_name_$j" => $$meta_data[$count]{'client_file_name'});
-			$self -> form() -> param("uploaded_file_name_$j" => $$meta_data[$count]{'server_file_name'});
-			$self -> form() -> param("size_$j"               => $$meta_data[$count]{'size'});
-			$self -> form() -> param("mime_type_$j"          => $$meta_data[$count]{'mime_type'});
+			$sth -> finish();
+
+			($i = $$md{'field'}) =~ s/.+_(\d)/$1/;
+
+			$self -> form() -> param("original_file_name_$1" => $$data{'client_file_name'});
+			$self -> form() -> param("uploaded_file_name_$1" => $$data{'server_file_name'});
+			$self -> form() -> param("size_$1"               => $$data{'size'});
+			$self -> form() -> param("mime_type_$1"          => $$data{'mime_type'});
 		}
 	}
 

@@ -357,7 +357,7 @@ sub upload
 				$self -> manager() -> do_update($meta_data, %$store_option);
 			}
 
-			push @meta_data, {$field_name => $$meta_data{'id'} };
+			push @meta_data, {field => $field_name, id => $$meta_data{'id'} };
 		}
 
 		File::Temp::cleanup();
@@ -634,13 +634,13 @@ C<CGI::Uploader> cycles thru these keys, using each one in turn to drive a singl
 
 Note: C<upload()> returns an arrayref of hashrefs, one for each uploaded file stored.
 
-The structure of these hashrefs are:
+The structure of these hashrefs is:
 
 =over 4
 
-=item key is I<field>, value is CGI form field name
+=item I<field> => CGI form field name
 
-=item key is I<id>, value is the value of the id column in the database
+=item I<id>    => The value of the id column in the database
 
 =back
 
