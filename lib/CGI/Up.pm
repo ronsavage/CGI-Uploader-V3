@@ -357,7 +357,7 @@ sub upload
 				$self -> manager() -> do_update($meta_data, %$store_option);
 			}
 
-			push @meta_data, $meta_data;
+			push @meta_data, {$field_name => $$meta_data{'id'} };
 		}
 
 		File::Temp::cleanup();
@@ -631,6 +631,21 @@ You must pass a hash to C<upload()>.
 The keys of this hash are CGI form field names (where the fields are of type I<file>).
 
 C<CGI::Uploader> cycles thru these keys, using each one in turn to drive a single upload.
+
+Note: C<upload()> returns an arrayref of hashrefs, one for each uploaded file stored.
+
+The structure of these hashrefs are:
+
+=over 4
+
+=item key is I<field>, value is CGI form field name
+
+=item key is I<id>, value is the value of the id column in the database
+
+=back
+
+You can use this data, e.g., to read the meta-data from the database and populate form fields to
+inform the user of the results of the upload.
 
 =head2 Processing Steps
 
