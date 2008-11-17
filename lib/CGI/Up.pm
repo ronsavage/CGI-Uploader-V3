@@ -984,6 +984,43 @@ For Postgres, make that
 
 	CGI::Uploader->new()->upload(file_name => [{dbh => $dbh, sequence_name => 'uploads_id_seq', table_name => 'uploads'}]);
 
+Most of the features in C<CGI::Uploader> are demonstrated in samples shipped with the distro:
+
+=over 4
+
+=item CGI forms
+
+Copy the directory htdocs/uploads/ to the doc root of your web server.
+
+=item CGI scripts
+
+Copy the files in cgi-bin/ to your cgi-bin directory.
+
+As explained above, don't expect use.cgi.simple.pl to work.
+
+Also, use.cgi.uploader.v2.pl will not run if you have installed V 3 over the top of V 2.
+
+=item Run the CGI scripts
+
+Point your web client at:
+
+=over 4
+
+=item /cgi-bin/use.cgi.pl
+
+=item /cgi-bin/use.cgi.uploader.v3 pl
+
+=back
+
+You can enter 1 or 2 file names in the CGI form.
+
+The code executed is actually in C<CGI::Uploader::Test>.
+
+See the method I<use_cgi_uploader_v3()> in that module for one way of utilizing the data returned by
+C<upload()>.
+
+=back
+
 =head1 The I<generate> key
 
 The I<generate> key points to an arrayref of hashrefs.
