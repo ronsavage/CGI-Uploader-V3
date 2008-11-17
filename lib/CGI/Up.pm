@@ -172,7 +172,7 @@ sub do_update
 	my($sql) = "update $store_option{'table_name'} set server_file_name = ?, height = ?, width = ? where id = ?";
 	my($sth) = $self -> dbh() -> prepare($sql);
 
-	$sth -> execute($$meta_data{'server_file_name'}, $$meta_data{'height'}, $$meta_data{'width'}, $store_option{'column_map'}{'id'});
+	$sth -> execute($$meta_data{'server_file_name'}, $$meta_data{'height'}, $$meta_data{'width'}, $$meta_data{'id'});
 
 } # End of do_update.
 
