@@ -3,9 +3,14 @@ package CGI::Up;
 use strict;
 use warnings;
 
+use File::Basename;
 use File::Copy; # For copy.
 use File::Spec;
 use File::Temp 'tempfile';
+
+use HTTP::BrowserDetect;
+
+use MIME::Types;
 
 use Params::Validate ':all';
 
@@ -15,6 +20,7 @@ our $VERSION = '2.90';
 
 # -----------------------------------------------
 
+has dbh      => (is => 'rw', required => 0, predicate => 'has_dbh', isa => 'Any');
 has query    => (is => 'rw', required => 0, predicate => 'has_query', isa => 'Any');
 has temp_dir => (is => 'rw', required => 0, predicate => 'has_temp_dir', isa => 'Any');
 
@@ -66,18 +72,194 @@ sub BUILD
 
 # -----------------------------------------------
 
-sub save
+sub copy_temp_file
 {
 	my($self, $path, $temp_file_name, $meta_data) = @_;
-	my($server_file_name) = File::Spec -> catdir($path, "$$meta_data{'id'}.xxx");
+	my($server_file_name) = File::Spec -> catdir($path, "$$meta_data{'id'}.png");
 
 	copy($temp_file_name, $server_file_name);
 
-	warn "=> Copy from $temp_file_name to $server_file_name";
-
 	return $server_file_name;
 
-} # End of save.
+} # End of copy_temp_file.
+
+# -----------------------------------------------
+
+sub do_insert
+{
+	my($self, $field_name, $meta_data, %store_option) = @_;
+
+	# Use either the caller's dbh or fabricate one.
+
+	if (! $self -> has_dbh() )
+	{
+		# CGI::Uploader checked that at least one of dbh and dsn was specified.
+		# So, we don't need to test for dsn here.
+
+		require DBI;
+
+		$self -> dbh(DBI -> connect(@{$store_option{'dsn'} }) );
+	}
+
+	my($db_server) = $self -> dbh() -> get_info(17);
+	my($sql)       = "insert into $store_option{'table_name'}";
+
+	# Ensure, if the caller is using Postgres, and they want the id field populated,
+	# that we stuff the next value from the callers' sequence into it.
+
+	if ( ($db_server eq 'PostgreSQL') && $store_option{'column_map'}{'id'})
+	{
+		$$meta_data{'id'} = $self -> dbh() -> selectrow_array("select nextval('$store_option{'sequence_name'}')");
+	}
+
+	my(@bind);
+	my(@column);
+	my($key);
+
+	for $key (keys %$meta_data)
+	{
+		push @column, $key;
+		push @bind, $$meta_data{$key};
+	}
+
+	$sql .= '(' . join(', ', @column) . ') values (' . ('?, ' x $#bind) . '?)';
+
+	my($sth) = $self -> dbh() -> prepare($sql);
+
+	$sth -> execute(@bind);
+
+	return $self -> dbh() -> last_insert_id(undef, undef, $store_option{'table_name'}, undef)
+
+} # End of do_insert.
+
+# -----------------------------------------------
+
+sub do_update
+{
+	my($self, $table_name, $meta_data) = @_;
+	my($sql) = "update $table_name set server_file_name = ?, height = ?, width = ? where id = ?";
+	my($sth) = $self -> dbh() -> prepare($sql);
+
+	$sth -> execute($$meta_data{'server_file_name'}, $$meta_data{'height'}, $$meta_data{'width'}, $$meta_data{'id'});
+
+} # End of do_update.
+
+# -----------------------------------------------
+
+sub do_upload
+{
+	my($self, $field_name, $temp_file_name) = @_;
+	my($q)         = $self -> query();
+	my($file_name) = $q -> param($field_name);
+
+	# Now strip off the volume/path info, if any.
+
+	my($client_os) = $^O;
+	my($browser)   = HTTP::BrowserDetect -> new();
+	$client_os     = 'MSWin32' if ($browser -> windows() );
+	$client_os     = 'MacOS'   if ($browser -> mac() );
+	$client_os     = 'Unix'    if ($browser->macosx() );
+
+	File::Basename::fileparse_set_fstype($client_os);
+
+	$file_name = File::Basename::fileparse($file_name,[]);
+
+	my($fh);
+	my($mime_type);
+
+	if ($q -> isa('Apache::Request') || $q -> isa('Apache2::Request') )
+	{
+		my($upload) = $q -> upload($field_name);
+		$fh         = $upload -> fh();
+		$mime_type  = $upload -> type();
+	}
+	else # It's a CGI.
+	{
+		$fh        = $q -> upload($field_name);
+		$mime_type = $q -> uploadInfo($fh);
+
+		if ($mime_type)
+		{
+			$mime_type = $$mime_type{'Content-Type'};
+		}
+
+		if (! $fh && $q -> cgi_error() )
+		{
+			confess $q -> cgi_error();
+		}
+	}
+
+	if (! $fh)
+	{
+		confess 'Unable to generate a file handle';
+	}
+
+	binmode($fh);
+	copy($fh, $temp_file_name) || confess "Unable to create temp file '$temp_file_name': $!";
+
+	# Determine the file extension, if any.
+
+	my($mime_types) = MIME::Types -> new();
+	my($type)       = $mime_types -> type($mime_type);
+	my(@extension)  = $type ? $type -> extensions() : ();
+	my($client_ext) = ($file_name =~ m/\.([\w\d]*)?$/);
+	$client_ext     = '' if (! $client_ext);
+	my($server_ext) = '';
+
+	if ($extension[0])
+	{
+		# If the client extension is one recognized by MIME::Type, use it.
+
+		if (defined($client_ext) && (grep {/^$client_ext$/} @extension) )
+		{
+			$server_ext = $client_ext;
+		}
+	}
+	else
+	{
+		# If is a provided extension but no MIME::Type extension, use that.
+
+		$server_ext = $client_ext;
+	}
+
+	warn "$file_name => $client_ext => $server_ext";
+
+	return
+	{
+		client_file_name => $file_name,
+		date_stamp       => 'now()',
+		extension        => $server_ext,
+		height           => 0,
+		id               => 0,
+		mime_type        => $mime_type || '',
+		parent_id        => 0,
+		server_file_name => '',
+		size             => (stat $temp_file_name)[7],
+		width            => 0,
+	};
+
+} # End of do_upload.
+
+# -----------------------------------------------
+
+sub get_size
+{
+	my($self, $meta_data) = @_;
+
+	require Image::Size;
+
+	my(@size) = Image::Size::imgsize($$meta_data{'server_file_name'});
+
+	if (! defined $size[0])
+	{
+		$size[0] = 0;
+		$size[1] = 0;
+	}
+
+	$$meta_data{'height'} = $size[0];
+	$$meta_data{'width'}  = $size[1];
+
+} # End of get_size.
 
 # -----------------------------------------------
 
@@ -88,6 +270,7 @@ sub upload
 	# Loop over the CGI form fields.
 
 	my($field_name, $field_option);
+	my($id);
 	my($meta_data);
 	my($store, $store_option);
 
@@ -98,7 +281,7 @@ sub upload
 		# Perform the upload for this field.
 
 		my($temp_fh, $temp_file_name) = tempfile('CGIuploaderXXXXX', UNLINK => 1, DIR => $self -> temp_dir() );
-		$meta_data                    = $self -> work($field_name, $temp_file_name);
+		$meta_data                    = $self -> do_upload($field_name, $temp_file_name);
 		my($store_count)              = 0;
 
 		# Loop over all store options.
@@ -124,23 +307,29 @@ sub upload
 			 table_name    => $$store_option{'table_name'},
 			);
 
+			# Ensure an imager is available.
+
+			if (! $$store_option{'imager'})
+			{
+				$$store_option{'imager'} = $self;
+			}
+
 			# Ensure a manager is available.
 
 			if (! $$store_option{'manager'})
 			{
-				require CGI::Uploader::Store::Manager;
-
-				$$store_option{'manager'} = CGI::Uploader::Store::Manager -> new();
+				$$store_option{'manager'} = $self;
 			}
 
 			# Call either the caller's manager or the default manager.
 
-			$$meta_data{'id'}               = $$store_option{'manager'} -> process($field_name, $meta_data, %$store_option);
-			$$meta_data{'server_file_name'} = $self -> save($$store_option{'path'}, $temp_file_name, $meta_data);
+			$$meta_data{'id'}               = $$store_option{'manager'} -> do_insert($field_name, $meta_data, %$store_option);
+			$$meta_data{'server_file_name'} = $self -> copy_temp_file($$store_option{'path'}, $temp_file_name, $meta_data);
 
 			if ($store_count == 1)
 			{
-				$$store_option{'manager'} -> save($$store_option{'table_name'}, $meta_data);
+				$$store_option{'imager'} -> get_size($meta_data);
+				$$store_option{'manager'} -> do_update($$store_option{'table_name'}, $meta_data);
 			}
 		}
 
@@ -191,6 +380,16 @@ sub validate_store_options
 			 optional => 1,
 			 type     => UNDEF | ARRAYREF,
 		 },
+		 imager =>
+		 {
+			 optional => 1,
+			 type     => SCALAR,
+		 },
+		 manager =>
+		 {
+			 optional => 1,
+			 type     => SCALAR,
+		 },
 		 path =>
 		 {
 			 type => SCALAR,
@@ -230,62 +429,6 @@ sub validate_store_options
 
 # -----------------------------------------------
 
-sub work
-{
-	my($self, $field_name, $temp_file_name) = @_;
-	my($q)         = $self -> query();
-	my($file_name) = $q -> param($field_name);
-
-	my($fh);
-	my($mime_type);
-
-	if ($q -> isa('Apache::Request') || $q -> isa('Apache2::Request') )
-	{
-		my($upload) = $q -> upload($field_name);
-		$fh         = $upload -> fh();
-		$mime_type  = $upload -> type() || '';
-	}
-	else # It's a CGI.
-	{
-		$fh        = $q -> upload($field_name);
-		$mime_type = $q -> uploadInfo($fh) || '';
-
-		if ($mime_type)
-		{
-			$mime_type = $$mime_type{'Content-Type'} || '';
-		}
-
-		if (! $fh && $q -> cgi_error() )
-		{
-			confess $q -> cgi_error();
-		}
-	}
-
-	if (! $fh)
-	{
-		confess 'Unable to generate a file handle';
-	}
-
-	binmode($fh);
-	copy($fh, $temp_file_name) || confess "Unable to create temp file '$temp_file_name': $!";
-
-	return
-	{
-		client_file_name => $file_name,
-		date_stamp       => 'now()',
-		extension        => '',
-		height           => 0,
-		mime_type        => $mime_type,
-		parent_id        => 0,
-		server_file_name => '',
-		size             => (stat $temp_file_name)[7],
-		width            => 0,
-	};
-
-} # End of work.
-
-# -----------------------------------------------
-
 1;
 
 =pod
@@ -296,15 +439,35 @@ CGI::Uploader - Manage CGI uploads using an SQL database
 
 =head1 Synopsis
 
+	# Create an upload object.
+
 	my($u) = CGI::Uploader -> new
 	(
 		query    => ..., # Optional.
 		temp_dir => ..., # Optional.
-	) -> upload # Mandatory.
-	(
-	form_field_1 => [...], # Mandatory. An arrayref of hashrefs.
-	form_field_2 => [...], # Mandatory. Another arrayref of hashrefs.
 	);
+
+	# Upload N files.
+
+	$u -> upload # Mandatory.
+	(
+	form_field_1 => # An arrayref of hashrefs.
+	[
+	{ # First, mandatory, set of options for storing the uploaded file.
+	column_map    => {...}, # Optional.
+	dbh           => $dbh,  # Optional. But one of dbh or dsn is
+	dsn           => [...], # Optional. mandatory if no manager.
+	manager       => $obj,  # Optional. If present, all others params are optional.
+	sequence_name => $s,    # Optional, but mandatory if Postgres and no manager.
+	table_name    => $s,    # Optional if manager, but mandatory if no manager.
+	},
+	{ # Second, etc, optional sets of options for storing copies of the file.
+	},
+	],
+	form_field_2 => [...], # Another arrayref of hashrefs.
+	);
+
+	# Generate N files from each uploaded file.
 
 	$u -> generate # Optional.
 	(
@@ -325,11 +488,11 @@ learned from V 2.
 
 =head1 Constructor and initialization
 
-C<new(...)> returns a C<CGI::Uploader> object.
+C<new()> returns a C<CGI::Uploader> object.
 
 This is the class's contructor.
 
-You must pass a hash to C<new(...)>.
+You must pass a hash to C<new()>.
 
 Options:
 
@@ -353,11 +516,16 @@ This object is expected to belong to one of these classes:
 
 If not provided, an object of type C<CGI> will be created and used to do the uploading.
 
-Warning: CGI::Simple cannot be supported. See this ticket, which is I<not> resolved:
+Warning # 1: CGI::Simple cannot be supported. See this ticket, which is I<not> resolved:
 
 http://rt.cpan.org/Ticket/Display.html?id=14838
 
 There is a comment in the source code of CGI::Simple about this issue. Search for 14838.
+
+Warning # 2: When using the Apache modules, you can only read the CGI form field values once.
+
+This is, calling $obj -> param($field_name) will only return a meaningful value on the first call,
+for a given value of $field_name. This is part of mod_perl's design.
 
 This key is optional.
 
@@ -373,13 +541,62 @@ This key is optional.
 
 =head1 Method: upload(%hash)
 
-You must pass a hash to C<upload(...)>.
+You must pass a hash to C<upload()>.
 
 The keys of this hash are CGI form field names (where the fields are of type I<file>).
 
 C<CGI::Uploader> cycles thru these keys, using each one in turn to drive a single upload.
 
-Each key points to an arrayref of options which specifies how to process the field.
+=head2 Processing Steps
+
+A mini-synopsis:
+
+	$u -> upload
+	(
+	file_name_1 =>
+	[
+	{First set of storage options for this file},
+	{Second set of storage options},
+	{...},
+	],
+	);
+
+=over 4
+
+=item Upload file
+
+C<upload()> calls C<do_upload()> to do the work of uploading the caller's file to a temporary file,
+and C<do_upload()> returns a hashref of meta-data associated with the file.
+
+This is done once, whereas the following 3 steps are done once for each hashref of storage options
+you specify in the arrayref pointed to by the 'current' CGI form field's name.
+
+=item Save the meta-data
+
+C<upload()> calls the C<do_insert()> method on the manager object to save the meta-data.
+
+C<insert()> returns the I<last insert id> from that insert. This id is used later when the temporary
+file is copied to a permanent file, unless the caller has specified a specific permanent file name.
+
+=item Create the permanent file
+
+C<upload()> calls C<copy_temp_file()> to save the file permanently.
+
+=item Determine the height and width of images
+
+C<upload()> calls the C<get_size()> method on the imager object to get the image size.
+
+=item Update the meta-data with the permanent file's name and image size
+
+C<upload()> calls the C<do_update()> method on the manager object to put the permanent file's name
+into the database record, along with the height and width.
+
+=back
+
+=head2 Details
+
+Each key in the hash passed in to C<upload()> points to an arrayref of options which specifies how to process the
+form field.
 
 Use multiple elements in the arrayref to store multiple sets of meta-data, all based on the same uploaded file.
 
@@ -479,9 +696,11 @@ For non-image files, the value will be 0.
 
 =back
 
+More detail is provided below, under I<Meta-data>.
+
 =item dbh => $dbh
 
-This is a database handle for use by the default manager class C<CGI::Uploader::Store::Manager>
+This is a database handle for use by the default manager class (which is just C<CGI::Uploader>)
 discussed below, under I<manager>.
 
 This key is optional if you use the I<manager> key, since in that case you do anything in your own
@@ -496,9 +715,13 @@ dbh via C<DBI>.
 
 =item dsn => [...]
 
-This key is ignored if you provide a I<dbh> key.
+This key is optional if you use the I<manager> key, since in that case you do anything in your own
+storage manager code.
 
-This key is mandatory when you do not provide a I<dbh> key.
+If you do provide the I<dsn> key, it is passed in to your manager just in case you need it.
+
+Using the default I<manager>, this key is ignored if you provide a I<dbh> key, but it is mandatory
+when you do not provide a I<dbh> key.
 
 The elements in the arrayref are:
 
@@ -527,6 +750,19 @@ This element is optional.
 The default manager class calls DBI -> connect(@$dsn) to connect to the database, i.e. in order
 to generate a I<dbh>, when you don't provide a I<dbh> key.
 
+=item imager => $object
+
+This is an instance of your class which will determine the height and width of an image.
+
+This key is optional.
+
+If you provide an object here, C<CGI::Uploader> will call $object => get_size($meta_data).
+
+You object uses $$meta_data{'server_file_name'} as the file's name, and returns the height and width in
+$$meta_data{'height'} and $$meta_data{'width'}, respectively.
+
+If you do not supply an I<imager> key, C<CGI::Uploader> requires Image::Size and calls its I<imgsize> function.
+
 =item manager => $object
 
 This is an instance of your class which will manage the transfer of meta-data to storage.
@@ -536,7 +772,7 @@ This key is optional.
 In the case you provide the I<manager> key, your object is responsible for saving (or discarding!) the meta-data.
 
 If you provide an object here, C<CGI::Uploader> will call
-$object => process(meta_data => $meta_data, field_name => $field_name, %{...}).
+$object => do_insert(meta_data => $meta_data, field_name => $field_name, %{...}).
 
 Parameters are:
 
@@ -546,6 +782,9 @@ Parameters are:
 
 I<$meta_data> will be a hashref of options generated by the uploading process
 
+See above, under I<column_map>, for the definition of the meta-data. Further details are below,
+under I<Meta-data>.
+
 =item $field_name
 
 I<$field_name> will be the 'current' CGI form field.
@@ -554,14 +793,17 @@ Remember, I<upload()> is iterating over all your CGI form field parameters at th
 
 =item %{...}
 
-%{...} will be the 'current' hashref, one of the arrayref elements passed to I<upload()>.
-
-See the next section for the definition of the meta-data.
+%{...} will be the 'current' hashref, one of the arrayref elements associated with the 'current' form field.
 
 =back
 
-If you do not provide the I<manager> key, C<CGI::Uploader> will create an instance of the default manager
-C<CGI::Uploader::Store::Manager>, and use that.
+If you do not provide the I<manager> key, C<CGI::Uploader> will do the work itself.
+
+=item path => 'String'
+
+This is a path on the web server's file system where a permanent copy of the uploaded file will be saved.
+
+This key is mandatory.
 
 =item sequence_name => 'String'
 
@@ -573,8 +815,8 @@ This key is optional if you use the I<manager> key, since in that case you can d
 storage manager code. If you do provide the I<sequence_name> key, it is passed in to your manager
 just in case you need it.
 
-This key is mandatory if you use Postgres and do not use the I<manager> key, since without the I<manager> key
-I<sequence_name> must be passed in to the default manager C<CGI::Uploader::Store::Manager>.
+This key is mandatory if you use Postgres and do not use the I<manager> key, since without the I<manager> key,
+I<sequence_name> must be passed in to the default manager (C<CGI::Uploader>).
 
 =item table_name => 'String'
 
@@ -584,22 +826,8 @@ This key is optional if you use the I<manager> key, since in that case you can d
 storage manager code. If you do provide the I<table_name> key, it is passed in to your manager
 just in case you need it.
 
-This key is mandatory if you do not use the I<manager> key, since without the I<manager> key
-I<table_name> must be passed in to the default manager C<CGI::Uploader::Store::Manager>.
-
-=back
-
-=head1 The I<generate> key
-
-The I<generate> key points to an arrayref of hashrefs.
-
-Use multiple elements to store multiple versions of the uploaded file.
-
-Each hashref contains the following keys:
-
-=over 4
-
-=item One rainy day, design this section of the code, and document it
+This key is mandatory if you do not use the I<manager> key, since without the I<manager> key,
+I<table_name> must be passed in to the default manager (C<CGI::Uploader>).
 
 =back
 
@@ -615,11 +843,67 @@ For Postgres, make that
 
 	CGI::Uploader->new()->upload(file_name => [{dbh => $dbh, sequence_name => 'uploads_id_seq', table_name => 'uploads'}]);
 
+=head1 The I<generate> key
+
+The I<generate> key points to an arrayref of hashrefs.
+
+Use multiple elements to store multiple versions of the uploaded file.
+
+Each hashref contains the following keys:
+
+=over 4
+
+=item One rainy day, design this section of the code, and document it
+
+=back
+
 =head1 Meta-data
+
+More details of the meta-data can be found above, under I<column_map>.
 
 Meta-data is a hashref, with these keys:
 
 =over 4
+
+=item client_file_name
+
+This is the value submitted by the user for the 'current' CGI form field.
+
+=item date_stamp
+
+This value is the string 'now()', until the meta-data is saved in the database.
+
+=item extension
+
+This value is '' (the empty string), until the uploaded file is copied to a permanent file.
+
+=item height
+
+This value is 0 until the I<imager> object is called to process the permanent file.
+
+=item id
+
+This value is 0 until the meta-data is saved in the database.
+
+=item mime_type
+
+This value is the mime type returned by the query object, or '' (the empty string).
+
+=item parent_id
+
+This value is 0.
+
+=item server_file_name
+
+This value is '' (the empty string), until the uploaded file is copied to a permanent file.
+
+=item size
+
+This is the size in bytes of the uploaded file.
+
+=item width
+
+This value is 0 until the I<imager> object is called to process the permanent file.
 
 =back
 
