@@ -13,13 +13,15 @@ Module::Build -> new
  },
  requires =>
  {
-	 File::Basename           => 0,
-	 File::Copy               => 0,
-	 File::Path               => 0,
-	 File::Spec               => 0,
-	 File::Temp               => 0,
-	 HTML::Template           => 0,
-	 HTTP::BrowserDetect      => 0,
-	 MIME::Types              => 0,
+	 File::Basename      => 0,
+	 File::Copy          => 0,
+	 File::Path          => 0,
+	 File::Spec          => 0,
+	 File::Temp          => 0,
+	 HTML::Template      => 0,
+	 HTTP::BrowserDetect => 0,
+	 MIME::Types         => 0,
+	 Params::Validate    => 0,
+	 Squirrel            => 0 # I.e. Mouse or Moose.
  },
 ) -> create_build_script();
