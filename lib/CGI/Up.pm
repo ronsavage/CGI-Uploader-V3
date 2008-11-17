@@ -301,10 +301,10 @@ sub upload
 
 	my($field_name, $field_option);
 	my($id);
-	my($meta_data);
+	my($meta_data, @meta_data);
 	my($store, $store_option);
 
-	for $field_name (keys %field)
+	for $field_name (sort keys %field)
 	{
 		$field_option = $field{$field_name};
 
@@ -356,10 +356,14 @@ sub upload
 				$self -> imager() -> get_size($meta_data);
 				$self -> manager() -> do_update($meta_data, %$store_option);
 			}
+
+			push @meta_data, $meta_data;
 		}
 
 		File::Temp::cleanup();
 	}
+
+	return \@meta_data;
 
 } # End of upload.
 
@@ -582,15 +586,30 @@ This object is expected to belong to one of these classes:
 
 If not provided, an object of type C<CGI> will be created and used to do the uploading.
 
-Warning # 1: CGI::Simple cannot be supported. See this ticket, which is I<not> resolved:
+If you want to use a different type of object, just ensure it has these CGI-compatible methods:
+
+=over 4
+
+=item cgi_error()
+
+This is only called if something goes wrong.
+
+=item upload()
+
+=item uploadInfo()
+
+
+=back
+
+I<Warning # 1>: CGI::Simple cannot be supported. See this ticket, which is I<not> resolved:
 
 http://rt.cpan.org/Ticket/Display.html?id=14838
 
 There is a comment in the source code of CGI::Simple about this issue. Search for 14838.
 
-Warning # 2: When using the Apache modules, you can only read the CGI form field values once.
+I<Warning # 2>: When using the Apache modules, you can only read the CGI form field values once.
 
-This is, calling $obj -> param($field_name) will only return a meaningful value on the first call,
+That is, calling $q -> param($field_name) will only return a meaningful value on the first call,
 for a given value of $field_name. This is part of mod_perl's design.
 
 This key is optional.

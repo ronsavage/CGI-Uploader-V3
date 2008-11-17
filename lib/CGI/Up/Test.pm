@@ -308,19 +308,50 @@ sub use_cgi_uploader_v3
 
 	my($q) = CGI -> new();
 
+	my(@file_name);
+
 	if ($q -> param('file_name_1') )
 	{
-		CGI::Up -> new(query => $q) -> upload
+		push @file_name, 'file_name_1';
+	}
+
+	if ($q -> param('file_name_2') )
+	{
+		push @file_name, 'file_name_2';
+	}
+
+	if (@file_name)
+	{
+		my($meta_data) = CGI::Up -> new(query => $q) -> upload
 			(
-			 file_name_1 =>
+			 map{(
+			 $_ =>
 			 [{
 				 dsn           => $self -> config() -> dsn(),
 				 file_scheme   => 'md5',
 				 path          => '/tmp',
 				 sequence_name => 'uploads_id_seq',
 				 table_name    => 'uploads',
-			 }],
+			 }]
+			 )} sort @file_name
 			);
+
+		my($count) = - 1;
+
+		my($i);
+		my($j);
+
+		for $i (sort @file_name)
+		{
+			$count++;
+
+			($j = $i) =~ s/.+_(\d)$/$1/;
+
+			$self -> form() -> param("original_file_name_$j" => $$meta_data[$count]{'client_file_name'});
+			$self -> form() -> param("uploaded_file_name_$j" => $$meta_data[$count]{'server_file_name'});
+			$self -> form() -> param("size_$j"               => $$meta_data[$count]{'size'});
+			$self -> form() -> param("mime_type_$j"          => $$meta_data[$count]{'mime_type'});
+		}
 	}
 
 	$self -> form() -> param(form_action => $self -> config() -> form_action() . '/' . $script);
