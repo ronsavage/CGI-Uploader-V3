@@ -315,6 +315,7 @@ sub use_cgi_uploader_v3
 			 file_name_1 =>
 			 [{
 				 dsn           => $self -> config() -> dsn(),
+				 file_scheme   => 'md5',
 				 path          => '/tmp',
 				 sequence_name => 'uploads_id_seq',
 				 table_name    => 'uploads',

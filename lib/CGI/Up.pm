@@ -5,6 +5,7 @@ use warnings;
 
 use File::Basename;
 use File::Copy; # For copy.
+use File::Path;
 use File::Spec;
 use File::Temp 'tempfile';
 
@@ -21,6 +22,9 @@ our $VERSION = '2.90';
 # -----------------------------------------------
 
 has dbh      => (is => 'rw', required => 0, predicate => 'has_dbh', isa => 'Any');
+has dsn      => (is => 'rw', required => 0, predicate => 'has_dsn', isa => 'Any');
+has imager   => (is => 'rw', required => 0, isa => 'Any');
+has manager  => (is => 'rw', required => 0, isa => 'Any');
 has query    => (is => 'rw', required => 0, predicate => 'has_query', isa => 'Any');
 has temp_dir => (is => 'rw', required => 0, predicate => 'has_temp_dir', isa => 'Any');
 
@@ -29,6 +33,15 @@ has temp_dir => (is => 'rw', required => 0, predicate => 'has_temp_dir', isa => 
 sub BUILD
 {
 	my($self) = @_;
+
+	# See if the caller specifed a dsn but no dbh.
+
+	if ($self -> has_dsn() && ! $self -> has_dbh() )
+	{
+		require DBI;
+
+		$self -> dbh(DBI -> connect(@{$self -> dsn()}) );
+	}
 
 	# Ensure a query object is available.
 
@@ -74,7 +87,26 @@ sub BUILD
 
 sub copy_temp_file
 {
-	my($self, $path, $temp_file_name, $meta_data) = @_;
+	my($self, $temp_file_name, $meta_data, $store_option) = @_;
+	my($path) = $$store_option{'path'};
+	$path     =~ s|^(.+)/$|$1|;
+
+	if ($$store_option{'file_scheme'} eq 'md5')
+	{
+		require Digest::MD5;
+
+		import Digest::MD5  qw/md5_hex/;
+
+		my($md5) = md5_hex($$meta_data{'id'});
+		$md5     =~ s|^(.)(.)(.).*|$1/$2/$3|;
+		$path    = File::Spec -> catdir($path, $md5);
+	}
+
+	if (! -e $path)
+	{
+		File::Path::mkpath($path);
+	}
+
 	my($server_file_name) = File::Spec -> catdir($path, "$$meta_data{'id'}.png");
 
 	copy($temp_file_name, $server_file_name);
@@ -222,8 +254,6 @@ sub do_upload
 		$server_ext = $client_ext;
 	}
 
-	warn "$file_name => $client_ext => $server_ext";
-
 	return
 	{
 		client_file_name => $file_name,
@@ -302,6 +332,7 @@ sub upload
 			 column_map    => $$store_option{'column_map'},
 			 dbh           => $$store_option{'dbh'},
 			 dsn           => $$store_option{'dsn'},
+			 file_scheme   => $$store_option{'file_scheme'},
 			 path          => $$store_option{'path'},
 			 sequence_name => $$store_option{'sequence_name'},
 			 table_name    => $$store_option{'table_name'},
@@ -309,27 +340,21 @@ sub upload
 
 			# Ensure an imager is available.
 
-			if (! $$store_option{'imager'})
-			{
-				$$store_option{'imager'} = $self;
-			}
+			$self -> imager($$store_option{'imager'} ? $$store_option{'imager'} : $self);
 
 			# Ensure a manager is available.
 
-			if (! $$store_option{'manager'})
-			{
-				$$store_option{'manager'} = $self;
-			}
+			$self -> manager($$store_option{'manager'} ? $$store_option{'manager'} : $self);
 
 			# Call either the caller's manager or the default manager.
 
-			$$meta_data{'id'}               = $$store_option{'manager'} -> do_insert($field_name, $meta_data, %$store_option);
-			$$meta_data{'server_file_name'} = $self -> copy_temp_file($$store_option{'path'}, $temp_file_name, $meta_data);
+			$$meta_data{'id'}               = $self -> manager() -> do_insert($field_name, $meta_data, %$store_option);
+			$$meta_data{'server_file_name'} = $self -> copy_temp_file($temp_file_name, $meta_data, $store_option);
 
 			if ($store_count == 1)
 			{
-				$$store_option{'imager'} -> get_size($meta_data);
-				$$store_option{'manager'} -> do_update($meta_data, %$store_option);
+				$self -> imager() -> get_size($meta_data);
+				$self -> manager() -> do_update($meta_data, %$store_option);
 			}
 		}
 
@@ -380,15 +405,20 @@ sub validate_store_options
 			 optional => 1,
 			 type     => UNDEF | ARRAYREF,
 		 },
+		 file_scheme =>
+		 {
+			 optional => 1,
+			 type     => UNDEF | SCALAR,
+		 },
 		 imager =>
 		 {
 			 optional => 1,
-			 type     => SCALAR,
+			 type     => UNDEF | SCALAR,
 		 },
 		 manager =>
 		 {
 			 optional => 1,
-			 type     => SCALAR,
+			 type     => UNDEF | SCALAR,
 		 },
 		 path =>
 		 {
@@ -423,6 +453,8 @@ sub validate_store_options
 	 width            => 'width',
 	};
 
+	$param{'file_scheme'} ||= 'simple';
+
 	return {%param};
 
 } # End of validate_store_options.
@@ -443,8 +475,12 @@ CGI::Uploader - Manage CGI uploads using an SQL database
 
 	my($u) = CGI::Uploader -> new
 	(
-		query    => ..., # Optional.
-		temp_dir => ..., # Optional.
+		dbh      => $dbh,  # Optional. Or specify in call to upload().
+		dsn      => [...], # Optional. Or specify in call to upload().
+		imager   => $obj,  # Optional. Or specify in call to upload().
+		manager  => $obj,  # Optional. Or specify in call to upload().
+		query    => $q,    # Optional.
+		temp_dir => $t,    # Optional.
 	);
 
 	# Upload N files.
@@ -457,6 +493,8 @@ CGI::Uploader - Manage CGI uploads using an SQL database
 	column_map    => {...}, # Optional.
 	dbh           => $dbh,  # Optional. But one of dbh or dsn is
 	dsn           => [...], # Optional. mandatory if no manager.
+	file_scheme   => $s,    # Optional.
+	imager        => $obj,  # Optional.
 	manager       => $obj,  # Optional. If present, all others params are optional.
 	sequence_name => $s,    # Optional, but mandatory if Postgres and no manager.
 	table_name    => $s,    # Optional if manager, but mandatory if no manager.
@@ -497,6 +535,34 @@ You must pass a hash to C<new()>.
 Options:
 
 =over 4
+
+=item dbh => $dbh
+
+This key may be specified globally or in the call to C<upload()>.
+
+See below for an explanation, including how this key interacts with I<dsn>.
+
+This key is optional.
+
+=item dsn => $dsn
+
+This key may be specified globally or in the call to C<upload()>.
+
+See below for an explanation, including how this key interacts with I<dbh>.
+
+This key is optional.
+
+=item imager => $obj
+
+This key may be specified globally or in the call to C<upload()>.
+
+This key is optional.
+
+=item manager => $obj
+
+This key may be specified globally or in the call to C<upload()>.
+
+This key is optional.
 
 =item query => $q
 
@@ -576,7 +642,7 @@ you specify in the arrayref pointed to by the 'current' CGI form field's name.
 C<upload()> calls the C<do_insert()> method on the manager object to save the meta-data.
 
 C<insert()> returns the I<last insert id> from that insert. This id is used later when the temporary
-file is copied to a permanent file, unless the caller has specified a specific permanent file name.
+file is copied to a permanent file.
 
 =item Create the permanent file
 
@@ -749,6 +815,47 @@ This element is optional.
 
 The default manager class calls DBI -> connect(@$dsn) to connect to the database, i.e. in order
 to generate a I<dbh>, when you don't provide a I<dbh> key.
+
+=item file_scheme => 'String'
+
+I<File_scheme> controls how files are stored on the web server's file system.
+
+All files are stored in the directory specified by the I<path> option.
+
+Each file name has the appropriate extension appended.
+
+The possible values of I<file_scheme> are:
+
+=over 4
+
+=item md5
+
+The file name is determined like this:
+
+=over 4
+
+=item Digest::MD5
+
+Use the (primary key) I<id> returned by storing the meta-data in the database to seed
+the Digest::MD5 module.
+
+=item Create 3 subdirectories
+
+Use the first 3 digits of the hex digest of the id to generate 3 levels of sub-directories.
+
+=item Add the name
+
+The file name is the (primary key) I<id> returned by storing the meta-data in the database.
+
+=back
+
+=item simple
+
+The file name is the (primary key) I<id> returned by storing the meta-data in the database.
+
+This is the default.
+
+=back
 
 =item imager => $object
 
