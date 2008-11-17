@@ -13,12 +13,6 @@ Module::Build -> new
  },
  requires =>
  {
-	 Carp                     => 0,
-	 CGI::Simple              => 0,
-	 Config::IniFiles         => 0,
-	 DBD::Pg                  => 0,
-	 DBI                      => 0,
-	 DBIx::Admin::CreateTable => 0,
 	 File::Basename           => 0,
 	 File::Copy               => 0,
 	 File::Path               => 0,
