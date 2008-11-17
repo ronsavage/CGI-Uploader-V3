@@ -1126,6 +1126,65 @@ If you do not specify an I<imager> object, you'll need C<Image::Size>.
 
 =back
 
+=head1 FAQ
+
+=over 4
+
+=item Specifying the file name on the server
+
+This feature is not provided, for various reasons.
+
+One problem is sabotage.
+
+Another problem is users specifying characters which are illegal in file names on the server.
+
+In other words, this feature was considered and rejected.
+
+=item API changes from V 2 to V 3
+
+API changes between V 2 and V 3 are obviously enormous. A direct comparison doesn't make much sense.
+
+However, here are some things to watch out for:
+
+=over 4
+
+=item Various columns have different (default) names
+
+=item Default file extension
+
+Under V 2, a file called 'x' would be saved by force with a name of 'x.bin'.
+
+V 3 does not change file names, so 'x' will be stored in the database as 'x'.
+
+=item The dot in the file extension
+
+Under V 2, a file called 'x.png' would have '.png' stored in the extension column of the database.
+
+V 3 only stores 'png'.
+
+=item The id of the last record inserted
+
+Under V 2, various mechanisms were used to retrieve this value.
+
+V 3 calls $dbh -> last_insert_id(), unless of course you've circumvented this by supplying your own
+I<manager> object.
+
+=item The file name on the server
+
+Under V 2, the permanent file name was not store as part of the meta-data.
+
+V 3 stores this information.
+
+=item Datestamps
+
+Under V 2, the datestamp of when the file was uploaded was not saved.
+
+V 3 stores this information.
+
+=back
+
+=back
+
 =head1 Changes
 
 See Changes and Changelog.ini. The latter is machine-readable, using Module::Metadata::Changes.
