@@ -634,7 +634,7 @@ C<CGI::Uploader> cycles thru these keys, using each one in turn to drive a singl
 
 Note: C<upload()> returns an arrayref of hashrefs, one for each uploaded file stored.
 
-The structure of these hashrefs is:
+The structure of these hashrefs is 2 keys and 2 values:
 
 =over 4
 
@@ -1171,7 +1171,7 @@ I<manager> object.
 
 =item The file name on the server
 
-Under V 2, the permanent file name was not store as part of the meta-data.
+Under V 2, the permanent file name was not stored as part of the meta-data.
 
 V 3 stores this information.
 
