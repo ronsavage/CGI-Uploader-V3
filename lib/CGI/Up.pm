@@ -144,14 +144,29 @@ sub do_insert
 		$$meta_data{'id'} = $self -> dbh() -> selectrow_array("select nextval('$store_option{'sequence_name'}')");
 	}
 
+	my($db_vendor) = $self -> dbh() -> get_info(17); # SQL_DBMS_NAME.
+
 	my(@bind);
 	my(@column);
 	my($key);
 
 	for $key (keys %$meta_data)
 	{
+		# Skip columns the caller does not want processed.
+
+		if (! $store_option{'column_map'}{$key})
+		{
+			next;
+		}
+
 		push @column, $store_option{'column_map'}{$key};
-		push @bind, $$meta_data{$key};
+
+		# For SQLite, we must use undef for the id, since DBIx::Admin::CreateTable's
+		# method generate_primary_key_sql() returns 'integer primary key auto_increment'
+		# for an SQLite primary key, and SQLite demands a NULL be inserted to get the
+		# autoincrement part of that to work. See http://www.sqlite.org/faq.html#q1.
+
+		push @bind, ( ($db_vendor eq 'SQLite') && ($key eq 'id') ) ? undef : $$meta_data{$key};
 	}
 
 	$sql .= '(' . join(', ', @column) . ') values (' . ('?, ' x $#bind) . '?)';
@@ -169,10 +184,32 @@ sub do_insert
 sub do_update
 {
 	my($self, $meta_data, %store_option) = @_;
-	my($sql) = "update $store_option{'table_name'} set server_file_name = ?, height = ?, width = ? where id = ?";
-	my($sth) = $self -> dbh() -> prepare($sql);
 
-	$sth -> execute($$meta_data{'server_file_name'}, $$meta_data{'height'}, $$meta_data{'width'}, $$meta_data{'id'});
+	# Skip columns the caller does not want processed.
+	# o This is the SQL with the default columns, i.e. the maximum number which are meaningful by default.
+	# o my($sql) = "update $store_option{'table_name'} set server_file_name = ?, height = ?, width = ? where id = ?";
+
+	my($column, @clause);
+	my(@bind);
+
+	for $column (qw/server_file_name height width/)
+	{
+		if ($store_option{'column_map'}{$column})
+		{
+			push @clause, "$store_option{'column_map'}{$column} = ?";
+			push @bind, $$meta_data{$column};
+		}
+	}
+
+	if (@clause)
+	{
+		my($sql) = "update $store_option{'table_name'} set " . join(', ', @clause) .
+			" where $store_option{'column_map'}{'id'} = ?";
+
+		my($sth) = $self -> dbh() -> prepare($sql);
+
+		$sth -> execute(@bind, $$meta_data{'id'});
+	}
 
 } # End of do_update.
 
@@ -1114,8 +1151,11 @@ The test only requires changing .ht.cgi.uploader.conf and re-running scripts/cre
 	table_name=uploads
 	username=
 
-Also, after running scripts/create.table.pl, use 'sudo chmod a+w /tmp/test' so that the Apache daemon can
+Also, after running scripts/create.table.pl, use 'chmod a+w /tmp/test' so that the Apache daemon can
 write to the database.
+
+One last thing. SQLite does not interpret the function I<now()>; it just puts that string in the I<date_stamp>
+column. Oh, well.
 
 =item DBI
 

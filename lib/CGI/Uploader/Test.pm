@@ -302,6 +302,17 @@ sub use_cgi_uploader_v3
 {
 	my($self)   = @_;
 	my($script) = 'use.cgi.uploader.v3.pl';
+	my($column_map) =
+	{ # Missing: mime_type and width. Used for testing.
+	 id               => 'id',
+	 client_file_name => 'client_file_name',
+	 date_stamp       => 'date_stamp',
+	 extension        => 'extension',
+	 height           => 'height',
+	 parent_id        => 'parent_id',
+	 server_file_name => 'server_file_name',
+	 size             => 'size',
+	};
 
 	require CGI;
 	require CGI::Up;
