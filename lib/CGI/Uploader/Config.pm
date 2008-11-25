@@ -24,9 +24,10 @@ has tmpl_path   => (is => 'rw', isa => 'Str');
 sub BUILD
 {
 	my($self)    = @_;
-	my($name)    = '.ht.cgi.uploader.conf';
-	my($path)    = $INC{'CGI/Uploader/Config.pm'};
-	$path        =~ s/Config.pm/$name/;
+#	my($name)    = '.ht.cgi.uploader.conf';
+#	my($path)    = $INC{'CGI/Uploader/Config.pm'};
+#	$path        =~ s/Config.pm/$name/;
+	my($path)    = '/home/ron/perl.modules/CGI-Up/lib/CGI/Uploader/.ht.cgi.uploader.conf';
 	my($section) = 'global';
 
 	# Check [global].
