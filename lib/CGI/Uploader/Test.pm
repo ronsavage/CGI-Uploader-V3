@@ -60,6 +60,14 @@ width integer not null
 )
 SQL
 
+	# Arrange for Apache to write to the SQLite database.
+
+	if ($self -> creator() -> db_vendor() eq 'SQLITE')
+	{
+		my(@dsn) = split(/=/, ${$self -> config() -> dsn()}[0]);
+		`chmod a+w $dsn[1]`;
+	}
+
 } # End of create_table.
 
 # -----------------------------------------------
