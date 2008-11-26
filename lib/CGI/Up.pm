@@ -25,6 +25,7 @@ our $VERSION = '2.90';
 
 has dbh      => (is => 'rw', required => 0, predicate => 'has_dbh', isa => 'Any');
 has dsn      => (is => 'rw', required => 0, predicate => 'has_dsn', isa => 'Any');
+has imager   => (is => 'rw', required => 0, isa => 'Any');
 has query    => (is => 'rw', required => 0, predicate => 'has_query', isa => 'Any');
 has manager  => (is => 'rw', required => 0, isa => 'Any');
 has temp_dir => (is => 'rw', required => 0, predicate => 'has_temp_dir', isa => 'Any');
@@ -656,6 +657,11 @@ sub validate_upload_options
 			 optional => 1,
 			 type     => UNDEF | SCALAR,
 		 },
+		 imager =>
+		 {
+			 optional => 1,
+			 type     => UNDEF | SCALAR,
+		 },
 		 manager =>
 		 {
 			 optional => 1,
@@ -687,6 +693,7 @@ sub validate_upload_options
 
 	$param{'column_map'}  ||= $self -> default_column_map();
 	$param{'file_scheme'} ||= 'simple';
+	$param{'imager'}      ||= $self -> imager()  || $self;
 	$param{'manager'}     ||= $self -> manager() || $self;
 
 	return {%param};
@@ -712,6 +719,7 @@ CGI::Uploader - Manage CGI uploads using an SQL database
 	(
 		dbh      => $dbh,  # Optional. Or specify in call to upload().
 		dsn      => [...], # Optional. Or specify in call to upload().
+		imager   => $obj,  # Optional. Or specify in call to upload's transform.
 		manager  => $obj,  # Optional. Or specify in call to upload().
 		query    => $q,    # Optional.
 		temp_dir => $t,    # Optional.
@@ -809,6 +817,14 @@ This key may be specified globally or in the call to C<upload()>.
 See below for an explanation, including how this key interacts with I<dbh>.
 
 This key (dsn) is optional.
+
+=item imager => $obj
+
+This key may be specified globally or in the call to C<upload>'s I<transform>.
+
+This object is used to handle the transformation of images.
+
+This key (imager) is optional.
 
 =item manager => $obj
 
