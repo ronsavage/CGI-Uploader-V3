@@ -368,6 +368,17 @@ sub use_cgi_uploader_v3
 				 path          => '/tmp',
 				 sequence_name => 'uploads_id_seq',
 				 table_name    => 'uploads',
+#				 transform     =>
+#				 {
+#					 class  => 'Image::Magick',
+#					 height => 400,
+#					 width  => 500,
+#				 },
+				 transform     =>
+				 {
+					 class   => 'Imager',
+					 options => {xpixels => 400, ypixels => 500},
+				 },
 			 }]
 			 )} sort @file_name
 			);

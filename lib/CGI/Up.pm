@@ -83,6 +83,34 @@ sub BUILD
 
 # -----------------------------------------------
 
+sub calculate_dimensions
+{
+	my($self, $image, $option) = @_;
+
+	if (! ($$option{'width'} || $$option{'height'}) )
+	{
+		die "transform option requires at least one of width and height";
+	}
+
+	my($original_width, $original_height) = $image -> Get('width', 'height');
+	my($new_width, $new_height)           = ($$option{'width'}, $$option{'height'});
+
+	if (! $new_width)
+	{
+		$new_width = sprintf("%.1d", ($original_width * $new_height) / $original_height);
+	}
+
+	if (! $new_height)
+	{
+		$new_height = sprintf("%.1d", ($original_height * $new_width) / $original_width);
+	}
+
+	return sprintf '%i x %i', $new_width, $new_height;
+
+} # End of calculate_dimensions.
+
+# -----------------------------------------------
+
 sub copy_temp_file
 {
 	my($self, $temp_file_name, $meta_data, $store_option) = @_;
@@ -280,6 +308,42 @@ sub do_insert
 
 # -----------------------------------------------
 
+sub do_transform
+{
+	my($self, $old_file_name, $meta_data, $option) = @_;
+	my($temp_fh, $temp_file_name) = tempfile('CGIuploaderXXXXX', UNLINK => 1, DIR => $self -> temp_dir() );
+
+	if ($$option{'class'} eq 'Image::Magick')
+	{
+		require Image::Magick;
+
+		my($image)      = Image::Magick -> new();
+		my($result)     = $image -> Read($old_file_name);
+		my($dimensions) = $self -> calculate_dimensions($image, $option);
+		$result         = $image -> Resize($dimensions);
+		$result         = $image -> Write($temp_file_name);
+	}
+	elsif ($$option{'class'} eq 'Imager')
+	{
+		require Imager;
+
+		my($image)      = Imager -> new();
+		my($result)     = $image -> read(file => $old_file_name, type => $$meta_data{'extension'});
+		my($new_image)  = $image -> scale(%{$$option{'options'} });
+		my($extension)  = $$meta_data{'extension'};
+		$extension      = $extension ? ".$extension" : '';
+		$temp_file_name = "$temp_file_name$extension";
+		$result         = $new_image -> write(file => $temp_file_name, type => $$meta_data{'extension'});
+	}
+
+	$$meta_data{'size'} = (stat $temp_file_name)[7];
+
+	return $temp_file_name;
+
+} # End of do_transform.
+
+# -----------------------------------------------
+
 sub do_update
 {
 	my($self, $field_name, $meta_data, $store_option) = @_;
@@ -457,6 +521,11 @@ sub upload
 			}
 
 			$store_option = $self -> validate_upload_options(%$store_option);
+
+			if ($$store_option{'transform'})
+			{
+				$temp_file_name = $self -> do_transform($temp_file_name, $meta_data, $$store_option{'transform'});
+			}
 
 			$$store_option{'manager'} -> do_insert($field_name, $meta_data, $store_option);
 			$self -> copy_temp_file($temp_file_name, $meta_data, $store_option);
