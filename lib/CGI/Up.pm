@@ -107,11 +107,11 @@ sub copy_temp_file
 		File::Path::mkpath($path);
 	}
 
-	my($server_file_name) = File::Spec -> catdir($path, "$$meta_data{'id'}.png");
+	my($extension)                  = $$meta_data{'extension'};
+	$extension                      = $extension ? ".$extension" : '';
+	$$meta_data{'server_file_name'} = File::Spec -> catdir($path, "$$meta_data{'id'}$extension");
 
-	copy($temp_file_name, $server_file_name);
-
-	return $server_file_name;
+	copy($temp_file_name, $$meta_data{'server_file_name'});
 
 } # End of copy_temp_file.
 
@@ -119,7 +119,7 @@ sub copy_temp_file
 
 sub do_insert
 {
-	my($self, $field_name, $meta_data, %store_option) = @_;
+	my($self, $field_name, $meta_data, $store_option) = @_;
 
 	# Use either the caller's dbh or fabricate one.
 
@@ -130,21 +130,19 @@ sub do_insert
 
 		require DBI;
 
-		$self -> dbh(DBI -> connect(@{$store_option{'dsn'} }) );
+		$self -> dbh(DBI -> connect(@{$$store_option{'dsn'} }) );
 	}
 
 	my($db_server) = $self -> dbh() -> get_info(17);
-	my($sql)       = "insert into $store_option{'table_name'}";
+	my($sql)       = "insert into $$store_option{'table_name'}";
 
 	# Ensure, if the caller is using Postgres, and they want the id field populated,
-	# that we stuff the next value from the callers' sequence into it.
+	# that we stuff the next value from the caller's sequence into it.
 
-	if ( ($db_server eq 'PostgreSQL') && $store_option{'column_map'}{'id'})
+	if ( ($db_server eq 'PostgreSQL') && $$store_option{'column_map'}{'id'})
 	{
-		$$meta_data{'id'} = $self -> dbh() -> selectrow_array("select nextval('$store_option{'sequence_name'}')");
+		$$meta_data{'id'} = $self -> dbh() -> selectrow_array("select nextval('$$store_option{'sequence_name'}')");
 	}
-
-	my($db_vendor) = $self -> dbh() -> get_info(17); # SQL_DBMS_NAME.
 
 	my(@bind);
 	my(@column);
@@ -154,28 +152,27 @@ sub do_insert
 	{
 		# Skip columns the caller does not want processed.
 
-		if (! $store_option{'column_map'}{$key})
+		if (! $$store_option{'column_map'}{$key})
 		{
 			next;
 		}
 
-		push @column, $store_option{'column_map'}{$key};
+		push @column, $$store_option{'column_map'}{$key};
 
 		# For SQLite, we must use undef for the id, since DBIx::Admin::CreateTable's
 		# method generate_primary_key_sql() returns 'integer primary key auto_increment'
 		# for an SQLite primary key, and SQLite demands a NULL be inserted to get the
 		# autoincrement part of that to work. See http://www.sqlite.org/faq.html#q1.
 
-		push @bind, ( ($db_vendor eq 'SQLite') && ($key eq 'id') ) ? undef : $$meta_data{$key};
+		push @bind, ( ($db_server eq 'SQLite') && ($key eq 'id') ) ? undef : $$meta_data{$key};
 	}
 
-	$sql .= '(' . join(', ', @column) . ') values (' . ('?, ' x $#bind) . '?)';
-
+	$sql     .= '(' . join(', ', @column) . ') values (' . ('?, ' x $#bind) . '?)';
 	my($sth) = $self -> dbh() -> prepare($sql);
 
 	$sth -> execute(@bind);
 
-	return $self -> dbh() -> last_insert_id(undef, undef, $store_option{'table_name'}, undef)
+	$$meta_data{'id'} = $self -> dbh() -> last_insert_id(undef, undef, $$store_option{'table_name'}, undef);
 
 } # End of do_insert.
 
@@ -183,28 +180,28 @@ sub do_insert
 
 sub do_update
 {
-	my($self, $meta_data, %store_option) = @_;
+	my($self, $field_name, $meta_data, $store_option) = @_;
 
 	# Skip columns the caller does not want processed.
 	# o This is the SQL with the default columns, i.e. the maximum number which are meaningful by default.
-	# o my($sql) = "update $store_option{'table_name'} set server_file_name = ?, height = ?, width = ? where id = ?";
+	# o my($sql) = "update $$store_option{'table_name'} set server_file_name = ?, height = ?, width = ? where id = ?";
 
 	my($column, @clause);
 	my(@bind);
 
 	for $column (qw/server_file_name height width/)
 	{
-		if ($store_option{'column_map'}{$column})
+		if ($$store_option{'column_map'}{$column})
 		{
-			push @clause, "$store_option{'column_map'}{$column} = ?";
+			push @clause, "$$store_option{'column_map'}{$column} = ?";
 			push @bind, $$meta_data{$column};
 		}
 	}
 
 	if (@clause)
 	{
-		my($sql) = "update $store_option{'table_name'} set " . join(', ', @clause) .
-			" where $store_option{'column_map'}{'id'} = ?";
+		my($sql) = "update $$store_option{'table_name'} set " . join(', ', @clause) .
+			" where $$store_option{'column_map'}{'id'} = ?";
 
 		my($sth) = $self -> dbh() -> prepare($sql);
 
@@ -315,16 +312,9 @@ sub get_size
 
 	require Image::Size;
 
-	my(@size) = Image::Size::imgsize($$meta_data{'server_file_name'});
-
-	if (! defined $size[0])
-	{
-		$size[0] = 0;
-		$size[1] = 0;
-	}
-
-	$$meta_data{'height'} = $size[0];
-	$$meta_data{'width'}  = $size[1];
+	my(@size)             = Image::Size::imgsize($$meta_data{'server_file_name'});
+	$$meta_data{'height'} = $size[0] ? $size[0] : 0;
+	$$meta_data{'width'}  = $size[0] ? $size[1] : 0;
 
 } # End of get_size.
 
@@ -385,13 +375,13 @@ sub upload
 
 			# Call either the caller's manager or the default manager.
 
-			$$meta_data{'id'}               = $self -> manager() -> do_insert($field_name, $meta_data, %$store_option);
-			$$meta_data{'server_file_name'} = $self -> copy_temp_file($temp_file_name, $meta_data, $store_option);
+			$self -> manager() -> do_insert($field_name, $meta_data, $store_option);
+			$self -> copy_temp_file($temp_file_name, $meta_data, $store_option);
 
 			if ($store_count == 1)
 			{
 				$self -> imager() -> get_size($meta_data);
-				$self -> manager() -> do_update($meta_data, %$store_option);
+				$self -> manager() -> do_update($field_name, $meta_data, $store_option);
 			}
 
 			push @meta_data, {field => $field_name, id => $$meta_data{'id'} };
@@ -512,7 +502,8 @@ CGI::Uploader - Manage CGI uploads using an SQL database
 
 =head1 Synopsis
 
-	# Create an upload object.
+	# Create an upload object
+	# -----------------------
 
 	my($u) = CGI::Uploader -> new
 	(
@@ -524,7 +515,8 @@ CGI::Uploader - Manage CGI uploads using an SQL database
 		temp_dir => $t,    # Optional.
 	);
 
-	# Upload N files.
+	# Upload N files
+	# --------------
 
 	$u -> upload # Mandatory.
 	(
@@ -546,7 +538,8 @@ CGI::Uploader - Manage CGI uploads using an SQL database
 	form_field_2 => [...], # Another arrayref of hashrefs.
 	);
 
-	# Generate N files from each uploaded file.
+	# Generate N files from each uploaded file
+	# ----------------------------------------
 
 	$u -> generate # Optional.
 	(
@@ -635,19 +628,13 @@ This is only called if something goes wrong.
 
 =item uploadInfo()
 
-
 =back
 
-I<Warning # 1>: CGI::Simple cannot be supported. See this ticket, which is I<not> resolved:
+I<Warning>: CGI::Simple cannot be supported. See this ticket, which is I<not> resolved:
 
 http://rt.cpan.org/Ticket/Display.html?id=14838
 
 There is a comment in the source code of CGI::Simple about this issue. Search for 14838.
-
-I<Warning # 2>: When using the Apache modules, you can only read the CGI form field values once.
-
-That is, calling $q -> param($field_name) will only return a meaningful value on the first call,
-for a given value of $field_name. This is part of mod_perl's design.
 
 This key is optional.
 
@@ -669,7 +656,7 @@ The keys of this hash are CGI form field names (where the fields are of type I<f
 
 C<CGI::Uploader> cycles thru these keys, using each one in turn to drive a single upload.
 
-Note: C<upload()> returns an arrayref of hashrefs, one for each uploaded file stored.
+Note: C<upload()> returns an arrayref of hashrefs, one hashref for each uploaded file stored.
 
 The structure of these hashrefs is 2 keys and 2 values:
 
@@ -693,7 +680,7 @@ A mini-synopsis:
 	file_name_1 =>
 	[
 	{First set of storage options for this file},
-	{Second set of storage options},
+	{Second set of storage options for the same file},
 	{...},
 	],
 	);
@@ -702,28 +689,37 @@ A mini-synopsis:
 
 =item Upload file
 
-C<upload()> calls C<do_upload()> to do the work of uploading the caller's file to a temporary file,
-and C<do_upload()> returns a hashref of meta-data associated with the file.
+C<upload()> calls C<do_upload()> to do the work of uploading the caller's file to a temporary file.
 
-This is done once, whereas the following 3 steps are done once for each hashref of storage options
+This is done once, whereas the following steps are done once for each hashref of storage options
 you specify in the arrayref pointed to by the 'current' CGI form field's name.
+
+C<do_upload()> returns a hashref of meta-data associated with the file.
 
 =item Save the meta-data
 
-C<upload()> calls the C<do_insert()> method on the manager object to save the meta-data.
+C<upload()> calls the C<do_insert()> method on the manager object to insert the meta-data into the
+database.
 
-C<insert()> returns the I<last insert id> from that insert. This id is used later when the temporary
-file is copied to a permanent file.
+The default manager is C<CGI::Uploader> itself.
+
+C<do_insert()> saves the I<last insert id> from that insert in the meta-data hashref.
 
 =item Create the permanent file
 
 C<upload()> calls C<copy_temp_file()> to save the file permanently.
 
+C<copy_temp_file()> saves the permanent file name in the meta-data hashref.
+
 =item Determine the height and width of images
 
 C<upload()> calls the C<get_size()> method on the imager object to get the image size.
 
-=item Update the meta-data with the permanent file's name and image size
+The default imager is C<CGI::Uploader> itself, which delegates the work to C<Image::Size>.
+
+C<get_size()> saves the image's dimensions in the meta-data hashref.
+
+=item Update the database with the permanent file's name and image size
 
 C<upload()> calls the C<do_update()> method on the manager object to put the permanent file's name
 into the database record, along with the height and width.
@@ -743,7 +739,7 @@ Each hashref contains 1 .. 5 of the following keys:
 
 =item column_map => {...}
 
-This hashref maps column_names used by C<CGI::Uploader> to column names used by your storage.
+This hashref maps column_names used by C<CGI::Uploader> to column names used by your database table.
 
 I<Column_map> is optional.
 
@@ -770,7 +766,7 @@ Points to note:
 
 =item Omitting keys
 
-If you omit any keys from your map, the corresponding meta-data will not be stored.
+If you omit any keys from your map, the corresponding meta-data will not be available.
 
 =item Client file name
 
@@ -793,7 +789,7 @@ If an extension cannot be determined, the value will be '', the empty string.
 
 =item Height
 
-If the uploaded or generated file is recognized as an image, this field will hold its height.
+This is provided by the I<Image::Size> module (by default), if it recognizes the type of the file.
 
 For non-image files, the value will be 0.
 
@@ -827,7 +823,7 @@ This is the file size in bytes.
 
 =item Width
 
-If the uploaded or generated file is recognized as an image, this field will hold its width.
+This is detrmined by the I<Image::Size> module (by default), if it recognizes the type of the file.
 
 For non-image files, the value will be 0.
 
@@ -907,7 +903,7 @@ The file name is determined like this:
 
 =item Digest::MD5
 
-Use the (primary key) I<id> returned by storing the meta-data in the database to seed
+Use the (primary key) I<id> (returned by storing the meta-data in the database) to seed
 the Digest::MD5 module.
 
 =item Create 3 subdirectories
@@ -916,15 +912,15 @@ Use the first 3 digits of the hex digest of the id to generate 3 levels of sub-d
 
 =item Add the name
 
-The file name is the (primary key) I<id> returned by storing the meta-data in the database.
+The file name is the (primary key) I<id>.
 
 =back
 
 =item simple
 
-The file name is the (primary key) I<id> returned by storing the meta-data in the database.
+The file name is the (primary key) I<id>.
 
-This is the default.
+I<Simple> is the default.
 
 =back
 
@@ -936,25 +932,31 @@ This key is optional.
 
 If you provide an object here, C<CGI::Uploader> will call $object => get_size($meta_data).
 
-You object uses $$meta_data{'server_file_name'} as the file's name, and returns the height and width in
+You object uses $$meta_data{'server_file_name'} as the file's name, and must save the height and width in
 $$meta_data{'height'} and $$meta_data{'width'}, respectively.
 
 If you do not supply an I<imager> key, C<CGI::Uploader> requires Image::Size and calls its I<imgsize> function.
 
 =item manager => $object
 
-This is an instance of your class which will manage the transfer of meta-data to storage.
+This is an instance of your class which will manage the transfer of meta-data to a database table.
 
 This key is optional.
 
 In the case you provide the I<manager> key, your object is responsible for saving (or discarding!) the meta-data.
 
 If you provide an object here, C<CGI::Uploader> will call
-$object => do_insert(meta_data => $meta_data, field_name => $field_name, %{...}).
+$object => do_insert($field_name, $meta_data, $store_option).
 
 Parameters are:
 
 =over 4
+
+=item $field_name
+
+I<$field_name> will be the 'current' CGI form field.
+
+Remember, I<upload()> is iterating over all your CGI form field parameters at this point.
 
 =item $meta_data
 
@@ -963,19 +965,17 @@ I<$meta_data> will be a hashref of options generated by the uploading process
 See above, under I<column_map>, for the definition of the meta-data. Further details are below,
 under I<Meta-data>.
 
-=item $field_name
+=item $store_option
 
-I<$field_name> will be the 'current' CGI form field.
-
-Remember, I<upload()> is iterating over all your CGI form field parameters at this point.
-
-=item %{...}
-
-%{...} will be the 'current' hashref, one of the arrayref elements associated with the 'current' form field.
+I<$store_option> will be the 'current' hashref of storage options, one of the arrayref elements
+associated with the 'current' form field.
 
 =back
 
 If you do not provide the I<manager> key, C<CGI::Uploader> will do the work itself.
+
+Later, C<CGI::Uploader> will call $object => do_update($field_name, $meta_data, $store_option),
+as explained above, under I<Processing Steps>.
 
 =item path => 'String'
 
