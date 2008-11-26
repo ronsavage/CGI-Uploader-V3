@@ -11,6 +11,8 @@ use File::Temp 'tempfile';
 
 use HTTP::BrowserDetect;
 
+use Image::Size;
+
 use MIME::Types;
 
 use Params::Validate ':all';
@@ -24,6 +26,7 @@ our $VERSION = '2.90';
 has dbh      => (is => 'rw', required => 0, predicate => 'has_dbh', isa => 'Any');
 has dsn      => (is => 'rw', required => 0, predicate => 'has_dsn', isa => 'Any');
 has query    => (is => 'rw', required => 0, predicate => 'has_query', isa => 'Any');
+has manager  => (is => 'rw', required => 0, isa => 'Any');
 has temp_dir => (is => 'rw', required => 0, predicate => 'has_temp_dir', isa => 'Any');
 
 # -----------------------------------------------
@@ -313,23 +316,24 @@ sub do_transform
 	my($self, $old_file_name, $meta_data, $option) = @_;
 	my($temp_fh, $temp_file_name) = tempfile('CGIuploaderXXXXX', UNLINK => 1, DIR => $self -> temp_dir() );
 
-	if ($$option{'class'} eq 'Image::Magick')
+	if (! $$option{'imager'})
 	{
 		require Image::Magick;
 
-		my($image)      = Image::Magick -> new();
-		my($result)     = $image -> Read($old_file_name);
-		my($dimensions) = $self -> calculate_dimensions($image, $option);
-		$result         = $image -> Resize($dimensions);
-		$result         = $image -> Write($temp_file_name);
+		$$option{'imager'} = Image::Magick -> new();
 	}
-	elsif ($$option{'class'} eq 'Imager')
-	{
-		require Imager;
 
-		my($image)      = Imager -> new();
-		my($result)     = $image -> read(file => $old_file_name, type => $$meta_data{'extension'});
-		my($new_image)  = $image -> scale(%{$$option{'options'} });
+	if ($$option{'imager'} -> isa('Image::Magick') )
+	{
+		my($result)     = $$option{'imager'} -> Read($old_file_name);
+		my($dimensions) = $self -> calculate_dimensions($$option{'imager'}, $option);
+		$result         = $$option{'imager'} -> Resize($dimensions);
+		$result         = $$option{'imager'} -> Write($temp_file_name);
+	}
+	elsif ($$option{'imager'} -> isa('Imager') )
+	{
+		my($result)     = $$option{'imager'} -> read(file => $old_file_name, type => $$meta_data{'extension'});
+		my($new_image)  = $$option{'imager'} -> scale(%{$$option{'options'} });
 		my($extension)  = $$meta_data{'extension'};
 		$extension      = $extension ? ".$extension" : '';
 		$temp_file_name = "$temp_file_name$extension";
@@ -475,9 +479,6 @@ sub do_upload
 sub get_size
 {
 	my($self, $meta_data) = @_;
-
-	require Image::Size;
-
 	my(@size)             = Image::Size::imgsize($$meta_data{'server_file_name'});
 	$$meta_data{'height'} = $size[0] ? $size[0] : 0;
 	$$meta_data{'width'}  = $size[0] ? $size[1] : 0;
@@ -532,7 +533,7 @@ sub upload
 
 			if ($store_count == 1)
 			{
-				$$store_option{'imager'} -> get_size($meta_data);
+				$self -> get_size($meta_data);
 				$$store_option{'manager'} -> do_update($field_name, $meta_data, $store_option);
 			}
 
@@ -655,11 +656,6 @@ sub validate_upload_options
 			 optional => 1,
 			 type     => UNDEF | SCALAR,
 		 },
-		 imager =>
-		 {
-			 optional => 1,
-			 type     => UNDEF | SCALAR,
-		 },
 		 manager =>
 		 {
 			 optional => 1,
@@ -691,8 +687,7 @@ sub validate_upload_options
 
 	$param{'column_map'}  ||= $self -> default_column_map();
 	$param{'file_scheme'} ||= 'simple';
-	$param{'imager'}      ||= $self;
-	$param{'manager'}     ||= $self;
+	$param{'manager'}     ||= $self -> manager() || $self;
 
 	return {%param};
 
@@ -717,7 +712,6 @@ CGI::Uploader - Manage CGI uploads using an SQL database
 	(
 		dbh      => $dbh,  # Optional. Or specify in call to upload().
 		dsn      => [...], # Optional. Or specify in call to upload().
-		imager   => $obj,  # Optional. Or specify in call to upload().
 		manager  => $obj,  # Optional. Or specify in call to upload().
 		query    => $q,    # Optional.
 		temp_dir => $t,    # Optional.
@@ -735,10 +729,10 @@ CGI::Uploader - Manage CGI uploads using an SQL database
 	dbh           => $dbh,  # Optional. But one of dbh or dsn is
 	dsn           => [...], # Optional. mandatory if no manager.
 	file_scheme   => $s,    # Optional.
-	imager        => $obj,  # Optional.
 	manager       => $obj,  # Optional. If present, all others params are optional.
 	sequence_name => $s,    # Optional, but mandatory if Postgres and no manager.
 	table_name    => $s,    # Optional if manager, but mandatory if no manager.
+	transform     => {...}  # Optional.
 	},
 	{ # Second, etc, optional sets of options for storing copies of the file.
 	},
@@ -806,7 +800,7 @@ This key may be specified globally or in the call to C<upload()>.
 
 See below for an explanation, including how this key interacts with I<dsn>.
 
-This key is optional.
+This key (dbh) is optional.
 
 =item dsn => $dsn
 
@@ -814,19 +808,15 @@ This key may be specified globally or in the call to C<upload()>.
 
 See below for an explanation, including how this key interacts with I<dbh>.
 
-This key is optional.
-
-=item imager => $obj
-
-This key may be specified globally or in the call to C<upload()>.
-
-This key is optional.
+This key (dsn) is optional.
 
 =item manager => $obj
 
 This key may be specified globally or in the call to C<upload()>.
 
-This key is optional.
+This object is used to handle the transfer of meta-data into the database.
+
+This key (manager) is optional.
 
 =item query => $q
 
@@ -866,7 +856,7 @@ http://rt.cpan.org/Ticket/Display.html?id=14838
 
 There is a comment in the source code of CGI::Simple about this issue. Search for 14838.
 
-This key is optional.
+This key (query) is optional.
 
 =item temp_dir => 'String'
 
@@ -874,13 +864,72 @@ Note the spelling of I<temp_dir>.
 
 If not provided, an object of type C<File::Spec> will be created and its tmpdir() method called.
 
-This key is optional.
+This key (temp_dir) is optional.
 
 =back
 
+=head1 Transformation 'v' Generation
+
+I<Transform> is an optional component in the call to C<upload()>.
+
+C<Generate()> is a separate method.
+
+This section discusses these 2 processes.
+
+Tranformation:
+
+=over 4
+
+=item You must specify a CGI form field
+
+This means transformation takes exactly 1 input file.
+
+=item The file is uploaded before being transformed
+
+=item The uploaded file is transformed and saved
+
+=item The uploaded file is discarded
+
+=item The transformed file's meta-data goes in the database
+
+This means transformation outputs exactly 1 file.
+
+=back
+
+Generation:
+
+=over 4
+
+=item There is no upload associated with generation
+
+=item The file used as a basis for generation must be in the database
+
+This means generation takes exactly 1 input file.
+
+So this input file was, presumably, uploaded at some time in the past, and may have been
+transformed at that time.
+
+=item You specify how to generate a new file based on an old file
+
+That is, you specify a set of options which control the generation of 1 new file.
+
+=item You specify N >= 1 sets of such options
+
+This means generation outputs N >= 1 new files.
+
+=item The old file stays in the database
+
+=item All the generated files' meta-data go in the database.
+
+=back
+
+A typical use of generation would be to produce thumbnails of large images.
+
 =head1 Method: delete(%hash)
 
-Note: Methods are listed here in alphabetical order.
+Note: Methods are listed here in alphabetical order. So C<delete()> comes before C<upload()>.
+Nevertheless, the most detailed explanations of options are under C<upload()>, with only brief notes
+here under C<delete()>.
 
 You must pass a hash to C<delete()>.
 
@@ -897,13 +946,15 @@ See below for a discussion of I<column_map>.
 Note: If your column map does not contain the I<server_file_name> key, C<delete(%hash)> will do nothing
 because it won't be able to find any file names to delete.
 
+The key (column_map) is optional.
+
 =item dbh => $dbh
 
 This key may be specified globally or in the call to C<delete()>.
 
 See below for an explanation, including how this key interacts with I<dsn>.
 
-This key is optional.
+This key (dbh) is optional.
 
 =item dsn => $dsn
 
@@ -911,7 +962,7 @@ This key may be specified globally or in the call to C<delete()>.
 
 See below for an explanation, including how this key interacts with I<dbh>.
 
-This key is optional.
+This key (dsn) is optional.
 
 =item id => $id
 
@@ -919,9 +970,13 @@ This is the (primary) key of the database table which will be processed.
 
 To specify a column name other than I<id>, use the I<column_map> option.
 
+This key (id) is mandatory.
+
 =item table_name => 'String'
 
 This is the name of the database table.
+
+This key (table_name) is mandatory.
 
 =back
 
@@ -976,11 +1031,11 @@ C<CGI::Uploader> cycles thru these keys, using each one in turn to drive a singl
 
 Note: C<upload()> returns an arrayref of hashrefs, one hashref for each uploaded file stored.
 
-The hashrefs are not the I<meta-data> associated with each uploaded file, but more like status reports.
+The hashrefs returned are not the I<meta-data> associated with each uploaded file, but more like status reports.
 
 These status reports are explained here, and the I<meta-data> is explained in the next section.
 
-The structure of these hashrefs is 2 keys and 2 values:
+The structure of these status hashrefs is 2 keys and 2 values:
 
 =over 4
 
@@ -1025,7 +1080,7 @@ If an extension cannot be determined, the value will be '', the empty string.
 
 =item height
 
-This is provided by the I<Image::Size> module (by default), if it recognizes the type of the file.
+This is provided by the I<Image::Size> module, if it recognizes the type of the file.
 
 For non-image files, the value will be 0.
 
@@ -1061,7 +1116,7 @@ This is the size in bytes of the uploaded file.
 
 =item width
 
-This is detrmined by the I<Image::Size> module (by default), if it recognizes the type of the file.
+This is detrmined by the I<Image::Size> module, if it recognizes the type of the file.
 
 For non-image files, the value will be 0.
 
@@ -1092,6 +1147,10 @@ you specify in the arrayref pointed to by the 'current' CGI form field's name.
 
 C<do_upload()> returns a hashref of meta-data associated with the file.
 
+=item Transform the file
+
+If requested, call C<do_transform()>.
+
 =item Save the meta-data
 
 C<upload()> calls the C<do_insert()> method on the manager object to insert the meta-data into the
@@ -1109,9 +1168,7 @@ C<copy_temp_file()> saves the permanent file name in the meta-data hashref.
 
 =item Determine the height and width of images
 
-C<upload()> calls the C<get_size()> method on the imager object to get the image size.
-
-The default imager is C<CGI::Uploader> itself, which delegates the work to C<Image::Size>.
+C<upload()> calls the C<get_size()> method to get the image size, which delegates the work to C<Image::Size>.
 
 C<get_size()> saves the image's dimensions in the meta-data hashref.
 
@@ -1136,8 +1193,6 @@ Each hashref contains 1 .. 5 of the following keys:
 =item column_map => {...}
 
 This hashref maps column_names used by C<CGI::Uploader> to column names used by your database table.
-
-I<Column_map> is optional.
 
 The default column_map is:
 
@@ -1165,6 +1220,8 @@ Points to note:
 If you omit any keys from your map, the corresponding meta-data will not be available.
 
 =back
+
+This key (column_map) is optional.
 
 =item dbh => $dbh
 
@@ -1224,7 +1281,7 @@ I<File_scheme> controls how files are stored on the web server's file system.
 
 All files are stored in the directory specified by the I<path> option.
 
-Each file name has the appropriate extension appended.
+Each file name has the appropriate extension appended (as determined by C<MIME::Types>.
 
 The possible values of I<file_scheme> are:
 
@@ -1259,24 +1316,11 @@ I<Simple> is the default.
 
 =back
 
-=item imager => $object
-
-This is an instance of your class which will determine the height and width of an image.
-
-This key is optional.
-
-If you provide an object here, C<CGI::Uploader> will call $object => get_size($meta_data).
-
-You object uses $$meta_data{'server_file_name'} as the file's name, and must save the height and width in
-$$meta_data{'height'} and $$meta_data{'width'}, respectively.
-
-If you do not supply an I<imager> key, C<CGI::Uploader> requires Image::Size and calls its I<imgsize> function.
+This key (file_scheme) is optional.
 
 =item manager => $object
 
 This is an instance of your class which will manage the transfer of meta-data to a database table.
-
-This key is optional.
 
 In the case you provide the I<manager> key, your object is responsible for saving (or discarding!) the meta-data.
 
@@ -1312,11 +1356,13 @@ If you do not provide the I<manager> key, C<CGI::Uploader> will do the work itse
 Later, C<CGI::Uploader> will call $object => do_update($field_name, $meta_data, $store_option),
 as explained above, under I<Processing Steps>.
 
+This key (manager) is optional.
+
 =item path => 'String'
 
 This is a path on the web server's file system where a permanent copy of the uploaded file will be saved.
 
-This key is mandatory.
+This key (path) is mandatory.
 
 =item sequence_name => 'String'
 
@@ -1341,6 +1387,110 @@ just in case you need it.
 
 This key is mandatory if you do not use the I<manager> key, since without the I<manager> key,
 I<table_name> must be passed in to the default manager (C<CGI::Uploader>).
+
+=item transform => {...}
+
+This key points to a set of options which are used to transform the uploaded file.
+
+As stated above, transformation takes 1 input file, uploads it, transforms it, saves the transformed
+file, and discards the uploaded file.
+
+See also C<generate()>, for a completely different way of processing files.
+
+Here are the 2 examples I used in testing, but not at the same time!
+
+	 transform =>
+	 {
+		 imager => Image::Magick -> new(), # Optional. Default.
+		 height => 400,
+		 width  => 500,
+	 }
+
+	 transform =>
+	 {
+		 imager  => Imager -> new(),
+		 options => {xpixels => 400, ypixels => 500},
+	 }
+
+Clearly, I<transform> points to a hashref:
+
+=over 4
+
+=item imager => $obj
+
+The I<imager> key is optional. If omitted, C<CGI::Uploader> creates an object of type C<Image::Magick>,
+and uses that.
+
+You can pass in an object whose class is a descendent of C<Image::Magick> or C<Imager>.
+
+They are treated differently, as explained next.
+
+=item height => 'Int', width => 'Int'
+
+If the $obj isa('Image::Magick') you must pass in at least 1 of I<height> and I<width>.
+
+The missing one is calculated from the size of the input image and the given parameter.
+
+Here's what happens:
+
+	if ($$option{'imager'} -> isa('Image::Magick') )
+	{
+		my($result)     = $$option{'imager'} -> Read($old_file_name);
+		my($dimensions) = $self -> calculate_dimensions($$option{'imager'}, $option);
+		$result         = $$option{'imager'} -> Resize($dimensions);
+		$result         = $$option{'imager'} -> Write($temp_file_name);
+	}
+
+Note: C<calculate_dimensions()> calls Get('width', 'height').
+
+This means if you wish to intercept these calls with a custom object, your C<Image::Magick>-based object must respond to
+these calls:
+
+=over 4
+
+=item Get()
+
+=item Read()
+
+=item Resize()
+
+=item Write()
+
+=back
+
+=item options => {xpixels => 400, ypixels => 500}
+
+If the $obj isa('Imager') you must pass in suitable parameters for C<Imager's> C<scale()> method.
+
+Any such parameters are acceptable. I just used I<xpixels> and I<ypixels> during testing.
+
+Here's what happens:
+
+	if ($$option{'imager'} -> isa('Imager') )
+	{
+		my($result)     = $$option{'imager'} -> read(file => $old_file_name, type => $$meta_data{'extension'});
+		my($new_image)  = $$option{'imager'} -> scale(%{$$option{'options'} });
+		my($extension)  = $$meta_data{'extension'};
+		$extension      = $extension ? ".$extension" : '';
+		$temp_file_name = "$temp_file_name$extension";
+		$result         = $new_image -> write(file => $temp_file_name, type => $$meta_data{'extension'});
+	}
+
+So, to intercept these calls, a descendent of C<Imager> must respond to these calls:
+
+=over 4
+
+=item read()
+
+=item scale()
+
+=item write()
+
+=back
+
+=back
+
+This key (transform) is optional.
 
 =back
 
@@ -1455,9 +1605,9 @@ If you set the I<file_scheme> option to I<md5>, you'll need C<Digest::MD5>.
 
 If you want to run any of the test scripts in cgi-bin/, you'll need C<HTML::Template>.
 
-=item Image::Size
+=item Image::Magick
 
-If you do not specify an I<imager> object, you'll need C<Image::Size>.
+If you specify the I<transform> option without the I<imager> option, C<CGI::Uploader> use C<Imager::Magick>.
 
 =back
 

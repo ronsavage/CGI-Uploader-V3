@@ -358,6 +358,9 @@ sub use_cgi_uploader_v3
 
 	if (@file_name)
 	{
+		require Image::Magick;
+		require Imager;
+
 		my($meta_data) = CGI::Up -> new(query => $q) -> upload
 			(
 			 map{(
@@ -368,17 +371,17 @@ sub use_cgi_uploader_v3
 				 path          => '/tmp',
 				 sequence_name => 'uploads_id_seq',
 				 table_name    => 'uploads',
-#				 transform     =>
-#				 {
-#					 class  => 'Image::Magick',
-#					 height => 400,
-#					 width  => 500,
-#				 },
 				 transform     =>
 				 {
-					 class   => 'Imager',
-					 options => {xpixels => 400, ypixels => 500},
+					 imager => Image::Magick -> new(),
+					 height => 400,
+					 width  => 500,
 				 },
+#				 transform =>
+#				 {
+#					 imager  => Imager -> new(),
+#					 options => {xpixels => 400, ypixels => 500},
+#				 },
 			 }]
 			 )} sort @file_name
 			);
