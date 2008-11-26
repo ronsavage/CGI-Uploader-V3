@@ -1,8 +1,9 @@
 #!/usr/bin/perl
 #
 # Name:
-#	create.table.pl.
+#	delete.files.pl.
 
+use lib '/home/ron/perl.modules/CGI-Up/lib';
 use strict;
 use warnings;
 
@@ -14,7 +15,14 @@ my($creator) = CGI::Uploader::Test -> new();
 
 print "Deleting files for database 'test'. \n";
 
-$creator -> delete(2);
+my($result) = $creator -> delete(1);
+
+my($row);
+
+for $row (@$result)
+{
+	print map{"$_ => $$row{$_}. \n"} sort keys %$row;
+}
 
 print "Finished deleting files. \n";
 print "------------------------ \n";

@@ -75,7 +75,10 @@ SQL
 sub delete
 {
 	my($self, $id) = @_;
-	my($meta_data) = CGI::Up -> new() -> upload
+
+	require CGI::Up;
+
+	return CGI::Up -> new() -> delete
 	(
 	 dsn        => $self -> config() -> dsn(),
 	 id         => $id,

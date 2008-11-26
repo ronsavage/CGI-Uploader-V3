@@ -148,6 +148,18 @@ sub delete
 	my($table_name)         = $$field{'table_name'};
 	my($server_file_column) = $$field{'column_map'}{'server_file_name'};
 
+	# Use either the caller's dbh or fabricate one.
+
+	if (! $self -> has_dbh() )
+	{
+		# CGI::Uploader checked that at least one of dbh and dsn was specified.
+		# So, we don't need to test for dsn here.
+
+		require DBI;
+
+		$self -> dbh(DBI -> connect(@{$field{'dsn'} }) );
+	}
+
 	# Phase 1: The generated files.
 
 	my($data)   = $self -> dbh() -> selectall_arrayref("select * from $table_name where $parent_id_column = ?", {Slice => {} }, $$field{'id'}) || [];
@@ -165,10 +177,6 @@ sub delete
 			push @id,   $$row{$id_column};
 		}
 	}
-
-	warn "Generated files to delete";
-	warn $_ for sort @file;
-	warn '-' x 50;
 
 	my($i);
 
@@ -188,20 +196,12 @@ sub delete
 
 	$self -> dbh() -> do("delete from $table_name where $id_column = $_") for @id;
 
-	warn "Deleted rows:";
-	warn $_ for @id;
-	warn '-' x 50;
-
 	# Phase 3: The uploaded file.
 
 	$data = $self -> dbh() -> selectrow_hashref("select * from $table_name where $id_column = ?", {}, $$field{'id'});
 
 	if ($$data{$server_file_column})
 	{
-		warn "Uploaded file to delete";
-		warn $$data{$server_file_column};
-		warn '-' x 50;
-
 		unlink $$data{$server_file_column};
 
 		push @$result,
@@ -539,6 +539,10 @@ sub validate_delete_options
 		 {
 			 optional => 1,
 			 type     => UNDEF | ARRAYREF,
+		 },
+		 id =>
+		 {
+			 type => SCALAR,
 		 },
 		 table_name =>
 		 {
