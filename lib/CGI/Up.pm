@@ -23,8 +23,6 @@ our $VERSION = '2.90';
 
 has dbh      => (is => 'rw', required => 0, predicate => 'has_dbh', isa => 'Any');
 has dsn      => (is => 'rw', required => 0, predicate => 'has_dsn', isa => 'Any');
-has imager   => (is => 'rw', required => 0, isa => 'Any');
-has manager  => (is => 'rw', required => 0, isa => 'Any');
 has query    => (is => 'rw', required => 0, predicate => 'has_query', isa => 'Any');
 has temp_dir => (is => 'rw', required => 0, predicate => 'has_temp_dir', isa => 'Any');
 
@@ -458,34 +456,15 @@ sub upload
 				confess "You must provide at least one of dbh and dsn for form field '$field_name'";
 			}
 
-			$store_option = $self -> validate_upload_options
-			(
-			 column_map    => $$store_option{'column_map'},
-			 dbh           => $$store_option{'dbh'},
-			 dsn           => $$store_option{'dsn'},
-			 file_scheme   => $$store_option{'file_scheme'},
-			 path          => $$store_option{'path'},
-			 sequence_name => $$store_option{'sequence_name'},
-			 table_name    => $$store_option{'table_name'},
-			);
+			$store_option = $self -> validate_upload_options(%$store_option);
 
-			# Ensure an imager is available.
-
-			$self -> imager($$store_option{'imager'} ? $$store_option{'imager'} : $self);
-
-			# Ensure a manager is available.
-
-			$self -> manager($$store_option{'manager'} ? $$store_option{'manager'} : $self);
-
-			# Call either the caller's manager or the default manager.
-
-			$self -> manager() -> do_insert($field_name, $meta_data, $store_option);
+			$$store_option{'manager'} -> do_insert($field_name, $meta_data, $store_option);
 			$self -> copy_temp_file($temp_file_name, $meta_data, $store_option);
 
 			if ($store_count == 1)
 			{
-				$self -> imager() -> get_size($meta_data);
-				$self -> manager() -> do_update($field_name, $meta_data, $store_option);
+				$$store_option{'imager'} -> get_size($meta_data);
+				$$store_option{'manager'} -> do_update($field_name, $meta_data, $store_option);
 			}
 
 			push @meta_data, {field => $field_name, id => $$meta_data{'id'} };
@@ -630,14 +609,21 @@ sub validate_upload_options
 		 {
 			 type => SCALAR,
 		 },
+		 transform =>
+		 {
+			 optional => 1,
+			 type     => UNDEF | HASHREF,
+		 },
 	 },
 	);
 
-	# Must do this separately, because when undef is passed in,
+	# Must do these separately, because when undef is passed in,
 	# Params::Validate does not honour the default clause :-(.
 
 	$param{'column_map'}  ||= $self -> default_column_map();
 	$param{'file_scheme'} ||= 'simple';
+	$param{'imager'}      ||= $self;
+	$param{'manager'}     ||= $self;
 
 	return {%param};
 
@@ -658,7 +644,7 @@ CGI::Uploader - Manage CGI uploads using an SQL database
 	# Create an upload object
 	# -----------------------
 
-	my($u) = CGI::Uploader -> new
+	my($u) = CGI::Uploader -> new # Mandatory.
 	(
 		dbh      => $dbh,  # Optional. Or specify in call to upload().
 		dsn      => [...], # Optional. Or specify in call to upload().
@@ -839,7 +825,7 @@ The keys of this hash are reserved words, and the values are your options.
 
 See below for a discussion of I<column_map>.
 
-Warning: If your column map does not contain the I<server_file_name> key, C<delete(%hash)> will do nothing
+Note: If your column map does not contain the I<server_file_name> key, C<delete(%hash)> will do nothing
 because it won't be able to find any file names to delete.
 
 =item dbh => $dbh
