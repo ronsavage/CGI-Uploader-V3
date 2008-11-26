@@ -520,7 +520,7 @@ CGI::Uploader - Manage CGI uploads using an SQL database
 
 	$u -> upload # Mandatory.
 	(
-	form_field_1 => # An arrayref of hashrefs.
+	form_field_1 => # An arrayref of hashrefs. The keys are CGI form field names.
 	[
 	{ # First, mandatory, set of options for storing the uploaded file.
 	column_map    => {...}, # Optional.
@@ -546,6 +546,16 @@ CGI::Uploader - Manage CGI uploads using an SQL database
 	form_field_1 => [...], # Mandatory. An arrayref of hashrefs.
 	form_field_2 => [...], # Mandatory. Another arrayref of hashrefs.
 	);
+
+The simplest option, then, is to use
+
+	CGI::Uploader -> new() -> upload(file_name => [{dbh => $dbh, table_name => 'uploads'}]);
+
+and let C<CGI::Uploader> do all the work.
+
+For Postgres, make that
+
+	CGI::Uploader -> new() -> upload(file_name => [{dbh => $dbh, sequence_name => 'uploads_id_seq', table_name => 'uploads'}]);
 
 =head1 Description
 
@@ -658,6 +668,10 @@ C<CGI::Uploader> cycles thru these keys, using each one in turn to drive a singl
 
 Note: C<upload()> returns an arrayref of hashrefs, one hashref for each uploaded file stored.
 
+The hashrefs are not the I<meta-data> associated with each uploaded file, but more like status reports.
+
+These status reports are explained here, and the I<meta-data> is explained in the next section.
+
 The structure of these hashrefs is 2 keys and 2 values:
 
 =over 4
@@ -671,7 +685,59 @@ The structure of these hashrefs is 2 keys and 2 values:
 You can use this data, e.g., to read the meta-data from the database and populate form fields to
 inform the user of the results of the upload.
 
-=head2 Processing Steps
+=head1 Meta-data
+
+I<Meta-data> associated with each uploaded file is accumulated while I<upload()> works.
+
+More details of the meta-data can be found below, under I<column_map>.
+
+Meta-data is a hashref, with these keys:
+
+=over 4
+
+=item client_file_name
+
+This is the value submitted by the user for the 'current' CGI form field.
+
+=item date_stamp
+
+This value is the string 'now()', until the meta-data is saved in the database.
+
+=item extension
+
+This value is '' (the empty string), until the uploaded file is copied to a permanent file.
+
+=item height
+
+This value is 0 until the I<imager> object is called to process the permanent file.
+
+=item id
+
+This value is 0 until the meta-data is saved in the database.
+
+=item mime_type
+
+This value is the mime type returned by the query object, or '' (the empty string).
+
+=item parent_id
+
+This value is 0.
+
+=item server_file_name
+
+This value is '' (the empty string), until the uploaded file is copied to a permanent file.
+
+=item size
+
+This is the size in bytes of the uploaded file.
+
+=item width
+
+This value is 0 until the I<imager> object is called to process the permanent file.
+
+=back
+
+=head1 Processing Steps
 
 A mini-synopsis:
 
@@ -1011,19 +1077,15 @@ I<table_name> must be passed in to the default manager (C<CGI::Uploader>).
 
 =head1 Sample Code
 
-The simplest option, then, is to use
-
-	CGI::Uploader->new()->upload(file_name => [{dbh => $dbh, table_name => 'uploads'}]);
-
-and let C<CGI::Uploader> do all the work.
-
-For Postgres, make that
-
-	CGI::Uploader->new()->upload(file_name => [{dbh => $dbh, sequence_name => 'uploads_id_seq', table_name => 'uploads'}]);
-
 Most of the features in C<CGI::Uploader> are demonstrated in samples shipped with the distro:
 
 =over 4
+
+=item Config data
+
+Patch lib/CGI/Uploader/.ht.cgi.uploader.conf as desired.
+
+This is used by C<CGI::Uploader::Config> and hence by C<CGI::Uploader::Test>.
 
 =item CGI forms
 
@@ -1049,7 +1111,7 @@ Point your web client at:
 
 =back
 
-You can enter 1 or 2 file names in the CGI form.
+You can enter 1 or 2 file names in each CGI form.
 
 The code executed is actually in C<CGI::Uploader::Test>.
 
@@ -1069,56 +1131,6 @@ Each hashref contains the following keys:
 =over 4
 
 =item One rainy day, design this section of the code, and document it
-
-=back
-
-=head1 Meta-data
-
-More details of the meta-data can be found above, under I<column_map>.
-
-Meta-data is a hashref, with these keys:
-
-=over 4
-
-=item client_file_name
-
-This is the value submitted by the user for the 'current' CGI form field.
-
-=item date_stamp
-
-This value is the string 'now()', until the meta-data is saved in the database.
-
-=item extension
-
-This value is '' (the empty string), until the uploaded file is copied to a permanent file.
-
-=item height
-
-This value is 0 until the I<imager> object is called to process the permanent file.
-
-=item id
-
-This value is 0 until the meta-data is saved in the database.
-
-=item mime_type
-
-This value is the mime type returned by the query object, or '' (the empty string).
-
-=item parent_id
-
-This value is 0.
-
-=item server_file_name
-
-This value is '' (the empty string), until the uploaded file is copied to a permanent file.
-
-=item size
-
-This is the size in bytes of the uploaded file.
-
-=item width
-
-This value is 0 until the I<imager> object is called to process the permanent file.
 
 =back
 
@@ -1251,7 +1263,7 @@ V 3 is available from github: git:github.com/ronsavage/cgi--uploader.git
 
 V 2 was written by Mark Stosberg <mark@summersault.com>.
 
-V 3 was by Mark Stosberg and Ron Savage <ron@savage.net.au>.
+V 3 was by Ron Savage <ron@savage.net.au>.
 
 Ron's home page: http://savage.net.au/index.html
 
