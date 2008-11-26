@@ -361,30 +361,33 @@ sub use_cgi_uploader_v3
 		require Image::Magick;
 		require Imager;
 
-		my($meta_data) = CGI::Up -> new(query => $q) -> upload
-			(
-			 map{(
-			 $_ =>
-			 [{
-				 dsn           => $self -> config() -> dsn(),
-				 file_scheme   => 'md5',
-				 path          => '/tmp',
-				 sequence_name => 'uploads_id_seq',
-				 table_name    => 'uploads',
-				 transform     =>
-				 {
-					 imager => Image::Magick -> new(),
-					 height => 400,
-					 width  => 500,
-				 },
-#				 transform =>
-#				 {
-#					 imager  => Imager -> new(),
-#					 options => {xpixels => 400, ypixels => 500},
-#				 },
-			 }]
-			 )} sort @file_name
-			);
+		my($meta_data) = CGI::Up -> new
+		(
+		 query  => $q,
+		) -> upload
+		(
+		 map{(
+		 $_ =>
+		 [{
+			 dsn           => $self -> config() -> dsn(),
+			 file_scheme   => 'md5',
+			 path          => '/tmp',
+			 sequence_name => 'uploads_id_seq',
+			 table_name    => 'uploads',
+			 transform     =>
+			 {
+				 imager => Image::Magick -> new(),
+				 height => 400,
+				 width  => 500,
+			 },
+#			 transform =>
+#			 {
+#				 imager  => Imager -> new(),
+#				 options => {xpixels => 400, ypixels => 500},
+#			 },
+		 }]
+		 )} sort @file_name
+		);
 
 		my($dbh) = DBI -> connect(@{$self -> config() -> dsn()});
 		my($sth) = $dbh -> prepare('select * from uploads where id = ?');
