@@ -72,6 +72,20 @@ SQL
 
 # -----------------------------------------------
 
+sub delete
+{
+	my($self, $id) = @_;
+	my($meta_data) = CGI::Up -> new() -> upload
+	(
+	 dsn        => $self -> config() -> dsn(),
+	 id         => $id,
+	 table_name => 'uploads',
+	);
+
+} # End of delete.
+
+# -----------------------------------------------
+
 sub drop_table
 {
 	my($self) = @_;

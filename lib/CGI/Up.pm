@@ -117,6 +117,110 @@ sub copy_temp_file
 
 # -----------------------------------------------
 
+sub default_column_map
+{
+	my($self) = @_;
+
+	return
+	{
+	 client_file_name => 'client_file_name',
+	 date_stamp       => 'date_stamp',
+	 extension        => 'extension',
+	 height           => 'height',
+	 id               => 'id',
+	 mime_type        => 'mime_type',
+	 parent_id        => 'parent_id',
+	 server_file_name => 'server_file_name',
+	 size             => 'size',
+	 width            => 'width',
+	};
+
+} # End of default_column_map.
+
+# -----------------------------------------------
+
+sub delete
+{
+	my($self, %field)       = @_;
+	my($field)              = $self -> validate_delete_options(%field);
+	my($id_column)          = $$field{'column_map'}{'id'};
+	my($parent_id_column)   = $$field{'column_map'}{'parent_id'};
+	my($table_name)         = $$field{'table_name'};
+	my($server_file_column) = $$field{'column_map'}{'server_file_name'};
+
+	# Phase 1: The generated files.
+
+	my($data)   = $self -> dbh() -> selectall_arrayref("select * from $table_name where $parent_id_column = ?", {Slice => {} }, $$field{'id'}) || [];
+	my($result) = [];
+
+	my(@file);
+	my(@id);
+	my($row);
+
+	for $row (@$data)
+	{
+		if ($$row{$server_file_column})
+		{
+			push @file, $$row{$server_file_column};
+			push @id,   $$row{$id_column};
+		}
+	}
+
+	warn "Generated files to delete";
+	warn $_ for sort @file;
+	warn '-' x 50;
+
+	my($i);
+
+	for $i (0 .. $#file)
+	{
+		unlink $file[$i];
+
+		push @$result,
+		{
+			id        => $id[$i],
+			file_name => $file[$i],
+		};
+	}
+
+
+	# Phase 2: The generated table rows.
+
+	$self -> dbh() -> do("delete from $table_name where $id_column = $_") for @id;
+
+	warn "Deleted rows:";
+	warn $_ for @id;
+	warn '-' x 50;
+
+	# Phase 3: The uploaded file.
+
+	$data = $self -> dbh() -> selectrow_hashref("select * from $table_name where $id_column = ?", {}, $$field{'id'});
+
+	if ($$data{$server_file_column})
+	{
+		warn "Uploaded file to delete";
+		warn $$data{$server_file_column};
+		warn '-' x 50;
+
+		unlink $$data{$server_file_column};
+
+		push @$result,
+		{
+			id        => $$data{$id_column},
+			file_name => $$data{$server_file_column},
+		};
+	}
+
+	# Phase 4: The uploaded table row.
+
+	$self -> dbh() -> do("delete from $table_name where $id_column = $$field{'id'}");
+
+	return $result;
+
+} # End of delete.
+
+# -----------------------------------------------
+
 sub do_insert
 {
 	my($self, $field_name, $meta_data, $store_option) = @_;
@@ -354,7 +458,7 @@ sub upload
 				confess "You must provide at least one of dbh and dsn for form field '$field_name'";
 			}
 
-			$store_option = $self -> validate_store_options
+			$store_option = $self -> validate_upload_options
 			(
 			 column_map    => $$store_option{'column_map'},
 			 dbh           => $$store_option{'dbh'},
@@ -396,7 +500,65 @@ sub upload
 
 # -----------------------------------------------
 
-sub validate_store_options
+sub validate_delete_options
+{
+	my($self)  = shift @_;
+	my(%param) = validate
+	(
+	 @_,
+	 {
+		 column_map =>
+		 {
+			 optional => 1,
+			 type     => UNDEF | HASHREF,
+		 },
+		 dbh =>
+		 {
+			 callbacks =>
+			 {
+				 postgres => sub
+				 {
+					 my($result) = 1;
+
+					 # If there is a dbh, is the database Postgres,
+					 # and, if so, is the sequence_name provided?
+
+					 if ($$_[0])
+					 {
+						 my($db_server) = $$_[0] -> get_info(17);
+
+						 $result = ($db_server eq 'PostgreSQL') ? $$_[1]{'sequence_name'} : 1;
+					 }
+
+					 return $result;
+				 },
+			 },
+			 optional  => 1,
+		 },
+		 dsn =>
+		 {
+			 optional => 1,
+			 type     => UNDEF | ARRAYREF,
+		 },
+		 table_name =>
+		 {
+			 type => SCALAR,
+		 },
+	 },
+	);
+
+	# Must do this separately, because when undef is passed in,
+	# Params::Validate does not honour the default clause :-(.
+
+	$param{'column_map'} ||= $self -> default_column_map();
+
+	return {%param};
+
+} # End of validate_delete_options.
+
+# -----------------------------------------------
+
+sub validate_upload_options
 {
 	my($self)  = shift @_;
 	my(%param) = validate
@@ -470,25 +632,12 @@ sub validate_store_options
 	# Must do this separately, because when undef is passed in,
 	# Params::Validate does not honour the default clause :-(.
 
-	$param{'column_map'} ||=
-	{
-	 client_file_name => 'client_file_name',
-	 date_stamp       => 'date_stamp',
-	 extension        => 'extension',
-	 height           => 'height',
-	 id               => 'id',
-	 mime_type        => 'mime_type',
-	 parent_id        => 'parent_id',
-	 server_file_name => 'server_file_name',
-	 size             => 'size',
-	 width            => 'width',
-	};
-
+	$param{'column_map'}  ||= $self -> default_column_map();
 	$param{'file_scheme'} ||= 'simple';
 
 	return {%param};
 
-} # End of validate_store_options.
+} # End of validate_upload_options.
 
 # -----------------------------------------------
 
@@ -518,7 +667,7 @@ CGI::Uploader - Manage CGI uploads using an SQL database
 	# Upload N files
 	# --------------
 
-	$u -> upload # Mandatory.
+	my($meta_data) = $u -> upload # Mandatory.
 	(
 	form_field_1 => # An arrayref of hashrefs. The keys are CGI form field names.
 	[
@@ -536,6 +685,18 @@ CGI::Uploader - Manage CGI uploads using an SQL database
 	},
 	],
 	form_field_2 => [...], # Another arrayref of hashrefs.
+	);
+
+	# Delete N files for each uploaded file
+	# -------------------------------------
+
+	my($report) = $u -> delete # Optional.
+	(
+	column_map => {...}, # Mandatory.
+	dbh        => $dbh,  # Optional. But one of dbh or dsn is
+	dsn        => [...], # Optional. mandatory.
+	id         => $id,   # Mandatory.
+	table_name => $s,    # Mandatory.
 	);
 
 	# Generate N files from each uploaded file
@@ -658,6 +819,94 @@ This key is optional.
 
 =back
 
+=head1 Method: delete(%hash)
+
+Note: Methods are listed here in alphabetical order.
+
+You must pass a hash to C<delete()>.
+
+I<delete(%hash)> deletes everything associated with a given database table id.
+
+The keys of this hash are reserved words, and the values are your options.
+
+=over 4
+
+=item column_map => {...}
+
+See below for a discussion of I<column_map>.
+
+Warning: If your column map does not contain the I<server_file_name> key, C<delete(%hash)> will do nothing
+because it won't be able to find any file names to delete.
+
+=item dbh => $dbh
+
+This key may be specified globally or in the call to C<delete()>.
+
+See below for an explanation, including how this key interacts with I<dsn>.
+
+This key is optional.
+
+=item dsn => $dsn
+
+This key may be specified globally or in the call to C<delete()>.
+
+See below for an explanation, including how this key interacts with I<dbh>.
+
+This key is optional.
+
+=item id => $id
+
+This is the (primary) key of the database table which will be processed.
+
+To specify a column name other than I<id>, use the I<column_map> option.
+
+=item table_name => 'String'
+
+This is the name of the database table.
+
+=back
+
+There is no I<manager> key because there is no point in you passing all these options to C<delete(%hash)>
+just so this method can pass them all back to your manager.
+
+The items deleted are:
+
+=over 4
+
+=item All files generated from the uploaded file
+
+They can be identified because their I<parent_id> column matches $id, and their file names come from the
+I<server_file_name> column.
+
+=item The records in the table whose I<parent_id> matches $id
+
+=item The uploaded file
+
+It can be identified becase its I<id> column matches $id, and its file name comes from the
+I<server_file_name> column.
+
+=item The record in the table whose I<id> matches $id
+
+=back
+
+C<delete(%hash)> returns an array ref of hashrefs.
+
+Each hashref has 2 keys and 2 values:
+
+=over 4
+
+=item id => $id
+
+$id is the value of the (primary) key column of a deleted file.
+
+One of these $id values will be the $id you passed in to C<delete(%hash)>.
+
+=item file_name => 'String'
+
+'String' is the name of a deleted file.
+
+=back
+
 =head1 Method: upload(%hash)
 
 You must pass a hash to C<upload()>.
@@ -689,43 +938,63 @@ inform the user of the results of the upload.
 
 I<Meta-data> associated with each uploaded file is accumulated while I<upload()> works.
 
-More details of the meta-data can be found below, under I<column_map>.
-
 Meta-data is a hashref, with these keys:
 
 =over 4
 
 =item client_file_name
 
-This is the value submitted by the user for the 'current' CGI form field.
+The client_file_name is the name supplied by the web client to C<CGI::Uploader>. It may
+I<or may not> have path information prepended, depending on the web client.
 
 =item date_stamp
 
 This value is the string 'now()', until the meta-data is saved in the database.
 
+At that time, the value of the function I<now()> is stored, except for SQLite, which just stores
+the string 'now()'.
+
+I<Date_stamp> has an underscore in it in case your database regards datastamp as a reserved word.
+
 =item extension
 
-This value is '' (the empty string), until the uploaded file is copied to a permanent file.
+This is provided by the C<File::Basename> module.
+
+The extension is a string I<without> the leading dot.
+
+If an extension cannot be determined, the value will be '', the empty string.
 
 =item height
 
-This value is 0 until the I<imager> object is called to process the permanent file.
+This is provided by the I<Image::Size> module (by default), if it recognizes the type of the file.
+
+For non-image files, the value will be 0.
 
 =item id
 
+The id is (presumably) the primary key of your table.
+
 This value is 0 until the meta-data is saved in the database.
+
+In the case of Postgres, it will be populated by the sequence named with the I<sequence_name> key, below.
 
 =item mime_type
 
-This value is the mime type returned by the query object, or '' (the empty string).
+This is provided by the I<MIME::Types> module, if it can determine the type.
+
+If not, it is '', the empty string.
 
 =item parent_id
 
-This value is 0.
+This is populated when a file is generated from the uploaded file. It's value will be the id of
+the upload file's record.
+
+For the uploaded file itself, the value will be 0.
 
 =item server_file_name
 
-This value is '' (the empty string), until the uploaded file is copied to a permanent file.
+The server_file_name is the name under which the file is finally stored on the file system
+of the web server. It is not the temporary file name used during the upload process.
 
 =item size
 
@@ -733,7 +1002,9 @@ This is the size in bytes of the uploaded file.
 
 =item width
 
-This value is 0 until the I<imager> object is called to process the permanent file.
+This is detrmined by the I<Image::Size> module (by default), if it recognizes the type of the file.
+
+For non-image files, the value will be 0.
 
 =back
 
@@ -834,68 +1105,7 @@ Points to note:
 
 If you omit any keys from your map, the corresponding meta-data will not be available.
 
-=item Client file name
-
-The client_file_name is the name supplied by the web client to C<CGI::Uploader>. It may
-I<or may not> have path information prepended, depending on the web client.
-
-=item Date stamp
-
-The value of the function I<now()> will be stored in this field.
-
-I<Date_stamp> has an underscore in it in case your database regards datastamp as a reserved word.
-
-=item Extension
-
-This is provided by the C<File::Basename> module.
-
-The extension is a string I<without> the leading dot.
-
-If an extension cannot be determined, the value will be '', the empty string.
-
-=item Height
-
-This is provided by the I<Image::Size> module (by default), if it recognizes the type of the file.
-
-For non-image files, the value will be 0.
-
-=item Id
-
-The id is (presumably) the primary key of your table.
-
-In the case of Postgres, it will be populated by the sequence named with the I<sequence_name> key, below.
-
-=item MIME type
-
-This is provided by the I<MIME::Types> module, if it can determine the type.
-
-If not, it is '', the empty string.
-
-=item Parent id
-
-This is populated when a file is generated from the uploaded file. It's value will be the id of
-the upload file's record.
-
-For the uploaded file itself, the value will be 0.
-
-=item Server file name
-
-The server_file_name is the name under which the file is finally stored on the file system
-of the web server. It is not the temporary file name used during the upload process.
-
-=item Size
-
-This is the file size in bytes.
-
-=item Width
-
-This is detrmined by the I<Image::Size> module (by default), if it recognizes the type of the file.
-
-For non-image files, the value will be 0.
-
 =back
-
-More detail is provided below, under I<Meta-data>.
 
 =item dbh => $dbh
 
@@ -1120,7 +1330,7 @@ C<upload()>.
 
 =back
 
-=head1 The I<generate> key
+=head1 Method: generate()
 
 The I<generate> key points to an arrayref of hashrefs.
 
