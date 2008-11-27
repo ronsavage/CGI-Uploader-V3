@@ -1,21 +1,22 @@
 Revision history for Perl extension CGI::Uploader.
 
-3.00 Tue Nov 11 10:51:00 EDT 2008
+2.90_01 Thu Nov 27 10:51:00 EST 2008
 	 - Rewrite all code. New API.
+	 - Change EDT in this file to EST because the date parser rejects EDT
 
-2.15 Sun Jul 15 07:21:24 EDT 2007
+2.15 Sun Jul 15 07:21:24 EST 2007
     - no functionality changes
 
     [INTERNAL]
     - improved importing code style.
     - Clarify docs regarding file_scheme vs. file_name (Jaldhar)
 
-2.14 Thu May 24 13:19:27 EDT 2007
+2.14 Thu May 24 13:19:27 EST 2007
 
     [BUG FIXES]
     - Avoid SQL error when two column names are the same by giving explicit table name.
 
-2.13 Mon Apr  9 22:39:54 EDT 2007
+2.13 Mon Apr  9 22:39:54 EST 2007
 
     [BUG FIXES]	
     - Better Mac OS X detection (Jeff MacDonald)

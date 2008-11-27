@@ -19,7 +19,7 @@ use Params::Validate ':all';
 
 use Squirrel;
 
-our $VERSION = '2.90';
+our $VERSION = '2.90_01';
 
 # -----------------------------------------------
 

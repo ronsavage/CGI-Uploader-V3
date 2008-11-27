@@ -9,7 +9,7 @@ use Config::IniFiles;
 
 use Squirrel;
 
-our $VERSION = '1.00';
+our $VERSION = '2.90_01';
 
 # -----------------------------------------------
 

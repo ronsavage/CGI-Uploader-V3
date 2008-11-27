@@ -7,7 +7,7 @@ use File::Copy; # For copy.
 use HTML::Template;
 use Squirrel;
 
-our $VERSION = '3.00';
+our $VERSION = '2.90_01';
 
 # -----------------------------------------------
 
