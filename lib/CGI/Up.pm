@@ -1970,7 +1970,7 @@ V 3 is available from github: git:github.com/ronsavage/cgi--uploader.git
 
 V 2 was written by Mark Stosberg <mark@summersault.com>.
 
-V 3 was by Ron Savage <ron@savage.net.au>.
+V 3 was written by Ron Savage <ron@savage.net.au>.
 
 Ron's home page: http://savage.net.au/index.html
 
