@@ -109,7 +109,7 @@ sub calculate_dimensions
 		$new_height = sprintf("%.1d", ($original_height * $new_width) / $original_width);
 	}
 
-	return sprintf '%i x %i', $new_width, $new_height;
+	return '%i x %i', $new_width, $new_height;
 
 } # End of calculate_dimensions.
 
@@ -169,6 +169,24 @@ sub default_column_map
 
 # -----------------------------------------------
 
+sub default_dbh
+{
+	my($self, $dsn) = @_;
+
+	if (! $self -> has_dbh() )
+	{
+		# The called checked that at least one of dbh and dsn was specified.
+		# So, we don't need to test for dsn here.
+
+		require DBI;
+
+		$self -> dbh(DBI -> connect(@$dsn) );
+	}
+
+} # End of default_dbh.
+
+# -----------------------------------------------
+
 sub delete
 {
 	my($self, %field)       = @_;
@@ -178,17 +196,16 @@ sub delete
 	my($table_name)         = $$field{'table_name'};
 	my($server_file_column) = $$field{'column_map'}{'server_file_name'};
 
+	# Ensure a dbh or dsn was specified.
+
+	if (! ($field{'dbh'} || $field{'dsn'}) )
+	{
+		confess "You must provide at least one of dbh and dsn for 'delete'";
+	}
+
 	# Use either the caller's dbh or fabricate one.
 
-	if (! $self -> has_dbh() )
-	{
-		# CGI::Uploader checked that at least one of dbh and dsn was specified.
-		# So, we don't need to test for dsn here.
-
-		require DBI;
-
-		$self -> dbh(DBI -> connect(@{$field{'dsn'} }) );
-	}
+	$self -> default_dbh($field{'dsn'});
 
 	# Phase 1: The generated files.
 
@@ -257,15 +274,7 @@ sub do_insert
 
 	# Use either the caller's dbh or fabricate one.
 
-	if (! $self -> has_dbh() )
-	{
-		# CGI::Uploader checked that at least one of dbh and dsn was specified.
-		# So, we don't need to test for dsn here.
-
-		require DBI;
-
-		$self -> dbh(DBI -> connect(@{$$store_option{'dsn'} }) );
-	}
+	$self -> default_dbh($$store_option{'dsn'});
 
 	my($db_server) = $self -> dbh() -> get_info(17);
 	my($sql)       = "insert into $$store_option{'table_name'}";
@@ -477,6 +486,44 @@ sub do_upload
 
 # -----------------------------------------------
 
+sub generate
+{
+	my($self, %option) = @_;
+	my($option)        = $self -> validate_generate_options(%option);
+
+	# Ensure a dbh or dsn was specified.
+
+	if (! $self -> has_dbh() && ! ($$option{'dbh'} || $$option{'dsn'}) )
+	{
+		confess "You must provide at least one of dbh and dsn for 'generate'";
+	}
+
+	# Use either the caller's dbh or fabricate one.
+
+	$self -> default_dbh($$option{'dsn'});
+
+	my(@id)   = keys %{$$option{'records'} };
+	my($sql)  = "select * from $$option{'table_name'} where $$option{'column_map'}{'id'} in (" . ('?, ') x $#id . '?)';
+	my($data) = $self -> dbh() -> selectall_hashref($sql, 'id', {}, @id);
+
+	my($client_file_name);
+	my($id, $input_file_name);
+	my($record);
+
+	for $id (keys %$data)
+	{
+		$client_file_name = $$data{$id}{$$option{'column_map'}{'client_file_name'} };
+		$input_file_name  = $$data{$id}{$$option{'column_map'}{'server_file_name'} };
+
+		print "$id => $client_file_name => $input_file_name. \n";
+	}
+
+	return {map{($_ => [2, 3])} @id};
+
+} # End of generate.
+
+# -----------------------------------------------
+
 sub get_size
 {
 	my($self, $meta_data) = @_;
@@ -583,7 +630,8 @@ sub validate_delete_options
 					 return $result;
 				 },
 			 },
-			 optional  => 1,
+			 optional => 1,
+			 type     => UNDEF | SCALAR,
 		 },
 		 dsn =>
 		 {
@@ -609,6 +657,50 @@ sub validate_delete_options
 	return {%param};
 
 } # End of validate_delete_options.
+
+# -----------------------------------------------
+
+sub validate_generate_options
+{
+	my($self)  = shift @_;
+	my(%param) = validate
+	(
+	 @_,
+	 {
+		 column_map =>
+		 {
+			 optional => 1,
+			 type     => UNDEF | HASHREF,
+		 },
+		 dbh =>
+		 {
+			 optional => 1,
+			 type     => UNDEF | SCALAR,
+		 },
+		 dsn =>
+		 {
+			 optional => 1,
+			 type     => UNDEF | ARRAYREF,
+		 },
+		 records =>
+		 {
+			 type => HASHREF,
+		 },
+		 table_name =>
+		 {
+			 type => SCALAR,
+		 },
+	 },
+	);
+
+	# Must do this separately, because when undef is passed in,
+	# Params::Validate does not honour the default clause :-(.
+
+	$param{'column_map'} ||= $self -> default_column_map();
+
+	return {%param};
+
+} # End of validate_generate_options.
 
 # -----------------------------------------------
 
@@ -645,7 +737,8 @@ sub validate_upload_options
 					 return $result;
 				 },
 			 },
-			 optional  => 1,
+			 optional => 1,
+			 type     => UNDEF | SCALAR,
 		 },
 		 dsn =>
 		 {
@@ -1036,6 +1129,85 @@ One of these $id values will be the $id you passed in to C<delete(%hash)>.
 'String' is the name of a deleted file.
 
 =back
+
+=head1 Method: generate(%hash)
+
+You must pass a hash to C<upload()>.
+
+The keys to this hash are:
+
+=over 4
+
+=item column_map
+
+The default column_map is documented below, under I<Details>.
+
+This key (column_map) is optional.
+
+=item dbh
+
+I<Dbh> is documented below, under I<Details>.
+
+At least one of I<dbh> and I<dsn> must be provided.
+
+=item dsn
+
+I<Dbh> is documented below, under I<Details>.
+
+At least one of I<dbh> and I<dsn> must be provided.
+
+=item records => {...}
+
+I<Records> specifies which (primary) keys in the table are used to find files to process.
+
+These files are input files, and the options in the hashref specify how to use those files
+to generate output files.
+
+The keys in the hashref are the keys in the table. E.g.:
+
+	records => {1 => [...], 99 => [...]}
+
+specifies that only records with ids of 1 and 99 are to be processed.
+
+The name of the (primary) key column defaults to I<id>, but you can use I<column_map> to change that.
+
+The name of the input file comes from the I<server_file_name> column of the table. Use I<column_map>
+to change that column name.
+
+The arrayrefs are used to specify N >= 1 output files for each input file.
+
+So, each arrayref contains N >= 1 hashrefs, and each hashref specifies how to generate 1 output file. E.g.:
+
+	records => {1 => [{...}, {...}], 99 => [{...}]}
+
+This says use id 1 to generate 2 output files, and use id 99 to generate 1 output file.
+
+The structures of the inner-most hashrefs is exactly the same as the hashrefs pointed to by the
+<transform> key, documented at the end of the section on C<upload()>. E.g.:
+
+For an I<imager> object of type C<Image::Magick>:
+
+	records => {1 => [{imager => $obj, width => $w, height => $h}, {...}], 99 => [{...}]}
+
+or, for an I<imager> object of type C<Imager>:
+
+	records => {1 => [{imager => $obj, options => {xpixels => $x, ypixels => $y}, {...}], 99 => [{...}]}
+
+C<CGI::Uploader> takes care of the I<meta-data> for each generated file.
+
+This key (records) is mandatory.
+
+=item table_name => 'String'
+
+This key (table_name) is mandatory.
+
+=back
+
+Note: C<generate()> returns an hashref of arrayrefs, where the keys of the hashref are the ids
+provided in the I<records> hashref, and the arrayrefs list the ids of the files generated.
+
+You can use this data, e.g., to read the meta-data from the database and populate form fields to
+inform the user of the results of the generation process.
 
 =head1 Method: upload(%hash)
 
@@ -1555,20 +1727,6 @@ C<upload()>.
 
 =back
 
-=head1 Method: generate()
-
-The I<generate> key points to an arrayref of hashrefs.
-
-Use multiple elements to store multiple versions of the uploaded file.
-
-Each hashref contains the following keys:
-
-=over 4
-
-=item One rainy day, design this section of the code, and document it
-
-=back
-
 =head1 Modules Used and Required
 
 Both Build.PL and Makefile.PL list the modules used by C<CGI::Uploader>.
@@ -1681,6 +1839,10 @@ V 3 stores this information.
 Under V 2, the datestamp of when the file was uploaded was not saved.
 
 V 3 stores this information.
+
+=item How come there is no update option like there was in V 2?
+
+Errr, it's been renamed to C<delete()> and C<upload()>.
 
 =back
 
