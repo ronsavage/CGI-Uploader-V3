@@ -1823,6 +1823,18 @@ The code executed is actually in C<CGI::Uploader::Test>.
 See the method I<use_cgi_uploader_v3()> in that module for one way of utilizing the data returned by
 C<upload()>.
 
+=item Command line scripts
+
+The scripts/ directory contains various sample programs.
+
+In particular, see scripts/test.generate.pl.
+
+Note: to run this program you will have already uploaded one or more files, and Apache will have created
+a directory structure according to your I<path> option, and will own that path.
+
+So, you may need to use sudo to run scripts/test.generate.pl, since it will write temporary files to
+the same path.
+
 =back
 
 =head1 Modules Used and Required
