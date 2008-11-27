@@ -109,7 +109,7 @@ sub calculate_dimensions
 		$new_height = sprintf("%.1d", ($original_height * $new_width) / $original_width);
 	}
 
-	return '%i x %i', $new_width, $new_height;
+	return sprintf '%i x %i', $new_width, $new_height;
 
 } # End of calculate_dimensions.
 
@@ -337,7 +337,7 @@ sub do_transform
 	if ($$option{'imager'} -> isa('Image::Magick') )
 	{
 		my($result)     = $$option{'imager'} -> Read($old_file_name);
-		my($dimensions) = $self -> calculate_dimensions($$option{'imager'}, $option);
+		my($dimensions) = $self -> calculate_dimensions($$option{'imager'}, $$option{'options'});
 		$result         = $$option{'imager'} -> Resize($dimensions);
 		$result         = $$option{'imager'} -> Write($temp_file_name);
 	}
@@ -513,6 +513,7 @@ sub generate
 
 	my($id);
 	my($key);
+	my(@new_id, %new_id);
 	my($record);
 	my($temp_file_name);
 
@@ -523,31 +524,47 @@ sub generate
 			$$column{$key} = $$data{$id}{$$field{'column_map'}{$key} };
 		}
 
+		@new_id = ();
+
 		for $record (@{$$field{'records'}{$id} })
 		{
+			# Note:
+			# o do_transform()      updates $$meta_data{'size'}
+			# o do_insert()         updates $$meta_data{'id'}
+			# o do_copy_temp_file() updates $$meta_data{'server_file_name'}
+			# o get_size()          updates $$meta_data{'width'}
+			# o get_size()          updates $$meta_data{'height'}
+
 			$$option{'imager'}        = $$record{'imager'} || $self -> imager();
 			$$option{'options'}       = $$record{'options'};
 			$$meta_data{'extension'}  = $$column{'extension'};
 			$temp_file_name           = $self -> do_transform($$column{'server_file_name'}, $meta_data, $option);
-
-			$self -> copy_temp_file($temp_file_name, $meta_data, $option);
-
 			$$option{'column_map'}    = $$field{'column_map'};
 			$$option{'file_scheme'}   = $$field{'file_scheme'};
-			$$option{'meta_data'}     = $column;
 			$$option{'path'}          = $$field{'path'};
-			$$option{'sequence_name'} = $$record{'sequence_name'};
-			$$option{'table_name'}    = $$record{'table_name'};
+			$$option{'sequence_name'} = $$field{'sequence_name'};
+			$$option{'table_name'}    = $$field{'table_name'}; # Preserve size from do_transform().
+			$$meta_data{$_}           = $$column{$_} for grep{! /size/} keys %$column;
+			$$meta_data{'parent_id'}  = $id;
 
-			$$option{'manager'} -> do_insert($$meta_data{'server_file_name'}, $meta_data, $option);
+			$$field{'manager'} -> do_insert($$meta_data{'server_file_name'}, $meta_data, $option);
+			$self -> copy_temp_file($temp_file_name, $meta_data, $option);
+			$self -> get_size($meta_data);
 
-			print "$id => $$column{'client_file_name'} => $$meta_data{'server_file_name'}. \n";
+			$sql = "update $$field{'table_name'} set $$field{'column_map'}{'width'} = ?, " .
+				"$$field{'column_map'}{'height'} = ? where $$field{'column_map'}{'id'} = ?";
+
+			$self -> dbh() -> do($sql, {}, $$meta_data{'height'}, $$meta_data{'width'}, $$meta_data{'id'});
+
+			push @new_id, $$meta_data{'id'};
 
 			File::Temp::cleanup();
 		}
+
+		$new_id{$id} = [@new_id];
 	}
 
-	return {map{($_ => [2, 3])} @id};
+	return \%new_id;
 
 } # End of generate.
 
@@ -716,6 +733,11 @@ sub validate_generate_options
 			 optional => 1,
 			 type     => UNDEF | SCALAR,
 		 },
+		 manager =>
+		 {
+			 optional => 1,
+			 type     => UNDEF | SCALAR,
+		 },
 		 path =>
 		 {
 			 type => SCALAR,
@@ -723,6 +745,11 @@ sub validate_generate_options
 		 records =>
 		 {
 			 type => HASHREF,
+		 },
+		 sequence_name =>
+		 {
+			 optional => 1,
+			 type     => UNDEF | SCALAR,
 		 },
 		 table_name =>
 		 {
@@ -736,6 +763,7 @@ sub validate_generate_options
 
 	$param{'column_map'}  ||= $self -> default_column_map();
 	$param{'file_scheme'} ||= 'simple';
+	$param{'manager'}     ||= $self -> manager() || $self;
 
 	return {%param};
 
@@ -825,7 +853,7 @@ sub validate_upload_options
 
 	$param{'column_map'}  ||= $self -> default_column_map();
 	$param{'file_scheme'} ||= 'simple';
-	$param{'imager'}      ||= $self -> imager()  || $self;
+	$param{'imager'}      ||= $self -> imager();
 	$param{'manager'}     ||= $self -> manager() || $self;
 
 	return {%param};

@@ -14,24 +14,35 @@ my($dbh)    = DBI -> connect(@{$config -> dsn()});
 my($up)     = CGI::Up -> new(dbh => $dbh);
 my($data)   = $up -> generate
 (
- records =>
+ file_scheme => 'md5',
+ path        => '/tmp',
+ records     =>
  {
-	 1  =>
+	 22  =>
 	 [
 	  {
-		  width  => 200,
-		  height => 400,
+		  options =>
+		  {
+			  width  => 300,
+			  height => 200,
+		  },
 	  },
 	  {
-		  width  => 400,
-		  height => 800,
+		  options =>
+		  {
+			  width  => 200,
+			  height => 100,
+		  },
 	  },
 	 ],
 	 21 =>
 	 [
 	  {
-		  width  => 500,
-		  height => 900,
+		  options =>
+		  {
+			  width  => 800,
+			  height => 666,
+		  },
 	  },
 	 ],
  },

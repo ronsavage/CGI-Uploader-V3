@@ -376,9 +376,8 @@ sub use_cgi_uploader_v3
 			 table_name    => 'uploads',
 			 transform     =>
 			 {
-				 imager => Image::Magick -> new(),
-				 height => 400,
-				 width  => 500,
+				 imager  => Image::Magick -> new(),
+				 options => {height => 400, width => 500},
 			 },
 #			 transform =>
 #			 {
