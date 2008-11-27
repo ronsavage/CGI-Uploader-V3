@@ -35,7 +35,8 @@ my($data)   = $up -> generate
 	  },
 	 ],
  },
- table_name => 'uploads',
+ sequence_name => 'uploads_id_seq',
+ table_name    => 'uploads',
 );
 
 my($id);

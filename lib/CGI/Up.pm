@@ -117,11 +117,11 @@ sub calculate_dimensions
 
 sub copy_temp_file
 {
-	my($self, $temp_file_name, $meta_data, $store_option) = @_;
-	my($path) = $$store_option{'path'};
+	my($self, $temp_file_name, $meta_data, $option) = @_;
+	my($path) = $$option{'path'};
 	$path     =~ s|^(.+)/$|$1|;
 
-	if ($$store_option{'file_scheme'} eq 'md5')
+	if ($$option{'file_scheme'} eq 'md5')
 	{
 		require Digest::MD5;
 
@@ -267,24 +267,25 @@ sub delete
 } # End of delete.
 
 # -----------------------------------------------
+# Note: $field_name is not used in the default manager.
 
 sub do_insert
 {
-	my($self, $field_name, $meta_data, $store_option) = @_;
+	my($self, $field_name, $meta_data, $option) = @_;
 
 	# Use either the caller's dbh or fabricate one.
 
-	$self -> default_dbh($$store_option{'dsn'});
+	$self -> default_dbh($$option{'dsn'});
 
 	my($db_server) = $self -> dbh() -> get_info(17);
-	my($sql)       = "insert into $$store_option{'table_name'}";
+	my($sql)       = "insert into $$option{'table_name'}";
 
 	# Ensure, if the caller is using Postgres, and they want the id field populated,
 	# that we stuff the next value from the caller's sequence into it.
 
-	if ( ($db_server eq 'PostgreSQL') && $$store_option{'column_map'}{'id'})
+	if ( ($db_server eq 'PostgreSQL') && $$option{'column_map'}{'id'})
 	{
-		$$meta_data{'id'} = $self -> dbh() -> selectrow_array("select nextval('$$store_option{'sequence_name'}')");
+		$$meta_data{'id'} = $self -> dbh() -> selectrow_array("select nextval('$$option{'sequence_name'}')");
 	}
 
 	my(@bind);
@@ -295,12 +296,12 @@ sub do_insert
 	{
 		# Skip columns the caller does not want processed.
 
-		if (! $$store_option{'column_map'}{$key})
+		if (! $$option{'column_map'}{$key})
 		{
 			next;
 		}
 
-		push @column, $$store_option{'column_map'}{$key};
+		push @column, $$option{'column_map'}{$key};
 
 		# For SQLite, we must use undef for the id, since DBIx::Admin::CreateTable's
 		# method generate_primary_key_sql() returns 'integer primary key auto_increment'
@@ -315,7 +316,7 @@ sub do_insert
 
 	$sth -> execute(@bind);
 
-	$$meta_data{'id'} = $self -> dbh() -> last_insert_id(undef, undef, $$store_option{'table_name'}, undef);
+	$$meta_data{'id'} = $self -> dbh() -> last_insert_id(undef, undef, $$option{'table_name'}, undef);
 
 } # End of do_insert.
 
@@ -352,7 +353,7 @@ sub do_transform
 
 	$$meta_data{'size'} = (stat $temp_file_name)[7];
 
-	return $temp_file_name;
+	return ($temp_fh, $temp_file_name);
 
 } # End of do_transform.
 
@@ -360,28 +361,28 @@ sub do_transform
 
 sub do_update
 {
-	my($self, $field_name, $meta_data, $store_option) = @_;
+	my($self, $field_name, $meta_data, $option) = @_;
 
 	# Skip columns the caller does not want processed.
 	# o This is the SQL with the default columns, i.e. the maximum number which are meaningful by default.
-	# o my($sql) = "update $$store_option{'table_name'} set server_file_name = ?, height = ?, width = ? where id = ?";
+	# o my($sql) = "update $$option{'table_name'} set server_file_name = ?, height = ?, width = ? where id = ?";
 
 	my($column, @clause);
 	my(@bind);
 
 	for $column (qw/server_file_name height width/)
 	{
-		if ($$store_option{'column_map'}{$column})
+		if ($$option{'column_map'}{$column})
 		{
-			push @clause, "$$store_option{'column_map'}{$column} = ?";
+			push @clause, "$$option{'column_map'}{$column} = ?";
 			push @bind, $$meta_data{$column};
 		}
 	}
 
 	if (@clause)
 	{
-		my($sql) = "update $$store_option{'table_name'} set " . join(', ', @clause) .
-			" where $$store_option{'column_map'}{'id'} = ?";
+		my($sql) = "update $$option{'table_name'} set " . join(', ', @clause) .
+			" where $$option{'column_map'}{'id'} = ?";
 
 		my($sth) = $self -> dbh() -> prepare($sql);
 
@@ -488,34 +489,62 @@ sub do_upload
 
 sub generate
 {
-	my($self, %option) = @_;
-	my($option)        = $self -> validate_generate_options(%option);
+	my($self, %field) = @_;
+	my($field)        = $self -> validate_generate_options(%field);
 
 	# Ensure a dbh or dsn was specified.
 
-	if (! $self -> has_dbh() && ! ($$option{'dbh'} || $$option{'dsn'}) )
+	if (! $self -> has_dbh() && ! ($$field{'dbh'} || $$field{'dsn'}) )
 	{
 		confess "You must provide at least one of dbh and dsn for 'generate'";
 	}
 
 	# Use either the caller's dbh or fabricate one.
 
-	$self -> default_dbh($$option{'dsn'});
+	$self -> default_dbh($$field{'dsn'});
 
-	my(@id)   = keys %{$$option{'records'} };
-	my($sql)  = "select * from $$option{'table_name'} where $$option{'column_map'}{'id'} in (" . ('?, ') x $#id . '?)';
-	my($data) = $self -> dbh() -> selectall_hashref($sql, 'id', {}, @id);
+	my(@id)         = keys %{$$field{'records'} };
+	my($sql)        = "select * from $$field{'table_name'} where $$field{'column_map'}{'id'} in (" . ('?, ') x $#id . '?)';
+	my($data)      = $self -> dbh() -> selectall_hashref($sql, 'id', {}, @id);
+	my($map)       = $self -> default_column_map();
+	my($meta_data) = {};
+	my($option)    = {};
+	my($column)    = {};
 
-	my($client_file_name);
-	my($id, $input_file_name);
+	my($id);
+	my($key);
 	my($record);
+	my($temp_file_name);
 
 	for $id (keys %$data)
 	{
-		$client_file_name = $$data{$id}{$$option{'column_map'}{'client_file_name'} };
-		$input_file_name  = $$data{$id}{$$option{'column_map'}{'server_file_name'} };
+		for $key (keys %$map)
+		{
+			$$column{$key} = $$data{$id}{$$field{'column_map'}{$key} };
+		}
 
-		print "$id => $client_file_name => $input_file_name. \n";
+		for $record (@{$$field{'records'}{$id} })
+		{
+			$$option{'imager'}        = $$record{'imager'} || $self -> imager();
+			$$option{'options'}       = $$record{'options'};
+			$$meta_data{'extension'}  = $$column{'extension'};
+			$temp_file_name           = $self -> do_transform($$column{'server_file_name'}, $meta_data, $option);
+
+			$self -> copy_temp_file($temp_file_name, $meta_data, $option);
+
+			$$option{'column_map'}    = $$field{'column_map'};
+			$$option{'file_scheme'}   = $$field{'file_scheme'};
+			$$option{'meta_data'}     = $column;
+			$$option{'path'}          = $$field{'path'};
+			$$option{'sequence_name'} = $$record{'sequence_name'};
+			$$option{'table_name'}    = $$record{'table_name'};
+
+			$$option{'manager'} -> do_insert($$meta_data{'server_file_name'}, $meta_data, $option);
+
+			print "$id => $$column{'client_file_name'} => $$meta_data{'server_file_name'}. \n";
+
+			File::Temp::cleanup();
+		}
 	}
 
 	return {map{($_ => [2, 3])} @id};
@@ -682,6 +711,15 @@ sub validate_generate_options
 			 optional => 1,
 			 type     => UNDEF | ARRAYREF,
 		 },
+		 file_scheme =>
+		 {
+			 optional => 1,
+			 type     => UNDEF | SCALAR,
+		 },
+		 path =>
+		 {
+			 type => SCALAR,
+		 },
 		 records =>
 		 {
 			 type => HASHREF,
@@ -696,7 +734,8 @@ sub validate_generate_options
 	# Must do this separately, because when undef is passed in,
 	# Params::Validate does not honour the default clause :-(.
 
-	$param{'column_map'} ||= $self -> default_column_map();
+	$param{'column_map'}  ||= $self -> default_column_map();
+	$param{'file_scheme'} ||= 'simple';
 
 	return {%param};
 
@@ -967,7 +1006,7 @@ There is a comment in the source code of CGI::Simple about this issue. Search fo
 
 This key (query) is optional.
 
-=item temp_dir => 'String'
+=item temp_dir => $string
 
 Note the spelling of I<temp_dir>.
 
@@ -1081,7 +1120,7 @@ To specify a column name other than I<id>, use the I<column_map> option.
 
 This key (id) is mandatory.
 
-=item table_name => 'String'
+=item table_name => $string
 
 This is the name of the database table.
 
@@ -1124,9 +1163,9 @@ $id is the value of the (primary) key column of a deleted file.
 
 One of these $id values will be the $id you passed in to C<delete(%hash)>.
 
-=item file_name => 'String'
+=item file_name => $string
 
-'String' is the name of a deleted file.
+$string is the name of a deleted file.
 
 =back
 
@@ -1155,6 +1194,26 @@ At least one of I<dbh> and I<dsn> must be provided.
 I<Dbh> is documented below, under I<Details>.
 
 At least one of I<dbh> and I<dsn> must be provided.
+
+=item file_scheme => $string
+
+I<file_scheme> is documented below, under I<Details>.
+
+I<File_scheme> defaults to I<string>.
+
+This key (file_scheme) is optional.
+
+=item manager => $obj
+
+I<Manager> is documented below, under I<Details>.
+
+This key (manager) is optional.
+
+=item path => $string
+
+I<Path> is documented below, under I<Details>.
+
+This key (path) is mandatory.
 
 =item records => {...}
 
@@ -1197,7 +1256,13 @@ C<CGI::Uploader> takes care of the I<meta-data> for each generated file.
 
 This key (records) is mandatory.
 
-=item table_name => 'String'
+=item sequence_name => $string
+
+I<Sequence_name> is documented below, under I<Details>.
+
+This key is mandatory if you are using Postgres, and optional if not.
+
+=item table_name => $string
 
 This key (table_name) is mandatory.
 
@@ -1463,7 +1528,7 @@ This element is optional.
 The default manager class calls DBI -> connect(@$dsn) to connect to the database, i.e. in order
 to generate a I<dbh>, when you don't provide a I<dbh> key.
 
-=item file_scheme => 'String'
+=item file_scheme => $string
 
 I<File_scheme> controls how files are stored on the web server's file system.
 
@@ -1546,13 +1611,13 @@ as explained above, under I<Processing Steps>.
 
 This key (manager) is optional.
 
-=item path => 'String'
+=item path => $string
 
 This is a path on the web server's file system where a permanent copy of the uploaded file will be saved.
 
 This key (path) is mandatory.
 
-=item sequence_name => 'String'
+=item sequence_name => $string
 
 This is the name of the sequence used to generate values for the primary key of the table.
 
@@ -1565,7 +1630,7 @@ just in case you need it.
 This key is mandatory if you use Postgres and do not use the I<manager> key, since without the I<manager> key,
 I<sequence_name> must be passed in to the default manager (C<CGI::Uploader>).
 
-=item table_name => 'String'
+=item table_name => $string
 
 This is the name of the table into which to store the meta-data.
 
