@@ -18,7 +18,7 @@ my($data)   = $up -> generate
  path        => '/tmp',
  records     =>
  {
-	 22  =>
+	 2  =>
 	 [
 	  {
 		  options =>
@@ -35,8 +35,7 @@ my($data)   = $up -> generate
 		  },
 	  },
 	 ],
-	 21 =>
-	 [
+	 1 =>
 	  {
 		  options =>
 		  {
@@ -44,7 +43,6 @@ my($data)   = $up -> generate
 			  height => 666,
 		  },
 	  },
-	 ],
  },
  sequence_name => 'uploads_id_seq',
  table_name    => 'uploads',
