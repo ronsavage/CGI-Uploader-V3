@@ -12,15 +12,15 @@ WriteMakefile
  ) : (),
  clean =>
  {
-	 FILES => 'blib/* Makefile MANIFEST CGI-Up-*'
+	 FILES => 'blib/* Makefile MANIFEST CGI-Uploader-*'
  },
  dist =>
  {
 	 COMPRESS => 'gzip',
 	 SUFFIX   => 'gz'
  },
- DISTNAME  => 'CGI-Up',
- NAME      => 'CGI::Up',
+ DISTNAME  => 'CGI-Uploader',
+ NAME      => 'CGI::Uploader',
  PL_FILES  => {},
  PREREQ_PM =>
  {
@@ -36,5 +36,5 @@ WriteMakefile
 	 Params::Validate    => 0,
 	 Squirrel            => 0 # I.e. Mouse or Moose.
  },
- VERSION_FROM	=> 'lib/CGI/Up.pm',
+ VERSION_FROM	=> 'lib/CGI/Uploader.pm',
 );

@@ -76,9 +76,9 @@ sub delete
 {
 	my($self, $id) = @_;
 
-	require CGI::Up;
+	require CGI::Uploader;
 
-	return CGI::Up -> new() -> delete
+	return CGI::Uploader -> new() -> delete
 	(
 	 dsn        => $self -> config() -> dsn(),
 	 id         => $id,
@@ -340,7 +340,7 @@ sub use_cgi_uploader_v3
 	};
 
 	require CGI;
-	require CGI::Up;
+	require CGI::Uploader;
 
 	my($q) = CGI -> new();
 
@@ -361,7 +361,7 @@ sub use_cgi_uploader_v3
 		require Image::Magick;
 		require Imager;
 
-		my($meta_data) = CGI::Up -> new
+		my($meta_data) = CGI::Uploader -> new
 		(
 		 query  => $q,
 		) -> upload
@@ -413,7 +413,7 @@ sub use_cgi_uploader_v3
 	}
 
 	$self -> form() -> param(form_action => $self -> config() -> form_action() . '/' . $script);
-	$self -> web_page() -> param(name    => 'CGI::Uploader V ' . $CGI::Up::VERSION);
+	$self -> web_page() -> param(name    => 'CGI::Uploader V ' . $CGI::Uploader::VERSION);
 	$self -> web_page() -> param(content => $self -> form() -> output() );
 
 	print $q -> header(), $self -> web_page() -> output();

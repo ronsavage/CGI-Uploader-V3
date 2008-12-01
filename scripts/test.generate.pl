@@ -4,14 +4,14 @@ use strict;
 use warnings;
 
 use CGI::Uploader::Config;
-use CGI::Up;
+use CGI::Uploader;
 use DBI;
 
 # ------------------------
 
 my($config) = CGI::Uploader::Config -> new();
 my($dbh)    = DBI -> connect(@{$config -> dsn()});
-my($up)     = CGI::Up -> new(dbh => $dbh);
+my($up)     = CGI::Uploader -> new(dbh => $dbh);
 my($data)   = $up -> generate
 (
  file_scheme => 'md5',

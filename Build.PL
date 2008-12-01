@@ -2,7 +2,7 @@ use Module::Build;
 
 Module::Build -> new
 (
- module_name    => 'CGI::Up',
+ module_name    => 'CGI::Uploader',
  license        => 'artistic',
  dist_abstract  => 'Manage CGI uploads using an SQL database',
  dist_author    => 'Mark Stosberg, Ron Savage <ron@savage.net.au>',
