@@ -1293,7 +1293,7 @@ to this:
 	records => {99 => {...} }
 
 The structure of the inner-most hashrefs is exactly the same as the hashrefs pointed to by the
-<transform> key, documented at L<Details/transform>. E.g.:
+<transform> key, documented at L</transform>. E.g.:
 
 For an I<imager> object of type C<Image::Magick>:
 
