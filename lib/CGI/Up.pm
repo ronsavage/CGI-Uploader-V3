@@ -533,6 +533,14 @@ sub generate
 
 		@new_id = ();
 
+		# Simplify the interface. Allow the user to replace $id => [{...}] with $id => {...}.
+		# So, here we turn {...} back in to [{...}].
+
+		if (ref($$field{'records'}{$id}) eq 'HASH')
+		{
+			$$field{'records'}{$id} = [$$field{'records'}{$id}];
+		}
+
 		for $record (@{$$field{'records'}{$id} })
 		{
 			# Note:
@@ -977,7 +985,7 @@ See L<Details|/Details> for an explanation, including how this key interacts wit
 
 This key (dbh) is optional.
 
-=item dsn => $dsn
+=item dsn => [...]
 
 This key may be specified globally or in the call to C<upload()>.
 
@@ -1139,7 +1147,7 @@ See L<Details|/Details> for an explanation, including how this key interacts wit
 
 This key (dbh) is optional.
 
-=item dsn => $dsn
+=item dsn => [...]
 
 This key may be specified globally or in the call to C<delete()>.
 
@@ -1206,25 +1214,25 @@ $string is the name of a deleted file.
 
 =head1 Method: generate(%hash)
 
-You must pass a hash to C<upload()>.
+You must pass a hash to C<generate()>.
 
 The keys to this hash are:
 
 =over 4
 
-=item column_map
+=item column_map => {...}
 
 The default column_map is documented under L<Details|/Details>.
 
 This key (column_map) is optional.
 
-=item dbh
+=item dbh => $dbh
 
 I<Dbh> is documented under L<Details|/Details>.
 
 At least one of I<dbh> and I<dsn> must be provided.
 
-=item dsn
+=item dsn => [...]
 
 I<Dbh> is documented under L<Details|/Details>.
 
@@ -1276,7 +1284,15 @@ So, each arrayref contains N >= 1 hashrefs, and each hashref specifies how to ge
 
 This says use id 1 to generate 2 output files, and use id 99 to generate 1 output file.
 
-The structures of the inner-most hashrefs is exactly the same as the hashrefs pointed to by the
+To make like easier, if you only wish to generate a single output file, you can reduce this:
+
+	records => {99 => [{...}]}
+
+to this:
+
+	records => {99 => {...} }
+
+The structure of the inner-most hashrefs is exactly the same as the hashrefs pointed to by the
 <transform> key, documented at the end of the section on C<upload()>. E.g.:
 
 For an I<imager> object of type C<Image::Magick>:
@@ -1505,7 +1521,7 @@ Points to note:
 
 =item Omitting keys
 
-If you omit any keys from your map, the corresponding meta-data will not be available.
+If you omit any keys from your map, the corresponding meta-data will not be saved.
 
 =back
 
@@ -1851,7 +1867,7 @@ If you use C<CGI::Uploader::Test>, it uses C<CGI::Uploader::Config>, which uses 
 
 =item DBD::Pg
 
-I (Ron) used Postgres when writing and testing V 3, and hence I used C<DBD::Pg>.
+I used Postgres when writing and testing V 3, and hence I used C<DBD::Pg>.
 
 Examine lib/CGI/Uploader/.ht.cgi.uploader.conf for details. This file is read in by C<CGI::Uploader::Config>.
 
@@ -1891,7 +1907,7 @@ If you want to run any of the test scripts in cgi-bin/, you'll need C<HTML::Temp
 
 =item Image::Magick
 
-If you specify the I<transform> option without the I<imager> option, C<CGI::Uploader> use C<Imager::Magick>.
+If you specify the I<transform> option without the I<imager> option, C<CGI::Uploader> uses C<Imager::Magick>.
 
 =back
 
