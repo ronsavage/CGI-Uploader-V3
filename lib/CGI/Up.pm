@@ -1284,7 +1284,7 @@ So, each arrayref contains N >= 1 hashrefs, and each hashref specifies how to ge
 
 This says use id 1 to generate 2 output files, and use id 99 to generate 1 output file.
 
-To make like easier, if you only wish to generate a single output file, you can reduce this:
+To make life easier, if you only wish to generate a single output file, you can reduce this:
 
 	records => {99 => [{...}]}
 
@@ -1293,7 +1293,7 @@ to this:
 	records => {99 => {...} }
 
 The structure of the inner-most hashrefs is exactly the same as the hashrefs pointed to by the
-<transform> key, documented at the end of the section on C<upload()>. E.g.:
+<transform> key, documented at L<Details/transform>. E.g.:
 
 For an I<imager> object of type C<Image::Magick>:
 
