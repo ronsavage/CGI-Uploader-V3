@@ -19,7 +19,7 @@ use Params::Validate ':all';
 
 use Squirrel;
 
-our $VERSION = '2.90_01';
+our $VERSION = '2.90_02';
 
 # -----------------------------------------------
 
@@ -84,34 +84,6 @@ sub BUILD
 	}
 
 }	# End of BUILD.
-
-# -----------------------------------------------
-
-sub calculate_dimensions
-{
-	my($self, $image, $option) = @_;
-
-	if (! ($$option{'width'} || $$option{'height'}) )
-	{
-		die "transform option requires at least one of width and height";
-	}
-
-	my($original_width, $original_height) = $image -> Get('width', 'height');
-	my($new_width, $new_height)           = ($$option{'width'}, $$option{'height'});
-
-	if (! $new_width)
-	{
-		$new_width = sprintf("%.1d", ($original_width * $new_height) / $original_height);
-	}
-
-	if (! $new_height)
-	{
-		$new_height = sprintf("%.1d", ($original_height * $new_width) / $original_width);
-	}
-
-	return sprintf '%i x %i', $new_width, $new_height;
-
-} # End of calculate_dimensions.
 
 # -----------------------------------------------
 
@@ -327,21 +299,7 @@ sub do_transform
 	my($self, $old_file_name, $meta_data, $option) = @_;
 	my($temp_fh, $temp_file_name) = tempfile('CGIuploaderXXXXX', UNLINK => 1, DIR => $self -> temp_dir() );
 
-	if (! $$option{'imager'})
-	{
-		require Image::Magick;
-
-		$$option{'imager'} = Image::Magick -> new();
-	}
-
-	if ($$option{'imager'} -> isa('Image::Magick') )
-	{
-		my($result)     = $$option{'imager'} -> Read($old_file_name);
-		my($dimensions) = $self -> calculate_dimensions($$option{'imager'}, $$option{'options'});
-		$result         = $$option{'imager'} -> Resize($dimensions);
-		$result         = $$option{'imager'} -> Write($temp_file_name);
-	}
-	elsif ($$option{'imager'} -> isa('Imager') )
+	if ($$option{'imager'} -> isa('Imager') )
 	{
 		my($result)     = $$option{'imager'} -> read(file => $old_file_name, type => $$meta_data{'extension'});
 		my($new_image)  = $$option{'imager'} -> scale(%{$$option{'options'} });
@@ -634,7 +592,7 @@ sub upload
 
 			if ($$store_option{'transform'})
 			{
-				$temp_file_name = $self -> do_transform($temp_file_name, $meta_data, $$store_option{'transform'});
+				($temp_file_name, $$meta_data{'extension'}) = $$store_option{'transform'} -> ($temp_file_name, $$meta_data{'extension'});
 			}
 
 			$$store_option{'manager'} -> do_insert($field_name, $meta_data, $store_option);
@@ -858,7 +816,7 @@ sub validate_upload_options
 		 transform =>
 		 {
 			 optional => 1,
-			 type     => UNDEF | HASHREF,
+			 type     => UNDEF | CODEREF,
 		 },
 	 },
 	);
