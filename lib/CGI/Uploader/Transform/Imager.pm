@@ -1,4 +1,4 @@
-package CGI::Uploader::Transform::ImageMagick;
+package CGI::Uploader::Transform::Imager;
 
 # Author:
 #	Ron Savage <ron@savage.net.au>
@@ -14,7 +14,7 @@ require 5.005_62;
 require Exporter;
 
 use File::Temp 'tempfile';
-use Image::Magick;
+use Imager;
 
 our @ISA = qw(Exporter);
 
@@ -22,7 +22,7 @@ our @ISA = qw(Exporter);
 # names by default without a very good reason. Use EXPORT_OK instead.
 # Do not simply export all your public functions/methods/constants.
 
-# This allows declaration	use CGI::Uploader::Transform::ImageMagick ':all';
+# This allows declaration	use CGI::Uploader::Transform::Imager ':all';
 # If you do not need this, moving things directly into @EXPORT or @EXPORT_OK
 # will save memory.
 our %EXPORT_TAGS = ( 'all' => [ qw(
@@ -36,27 +36,6 @@ our @EXPORT = qw(
 );
 
 our $VERSION = '2.90_02';
-
-# -----------------------------------------------
-
-sub calculate_dimensions
-{
-	my($image, $new_width, $new_height)   = @_;
-	my($original_width, $original_height) = $image -> Get('width', 'height');
-
-	if (! $new_width)
-	{
-		$new_width = sprintf("%.1d", ($original_width * $new_height) / $original_height);
-	}
-
-	if (! $new_height)
-	{
-		$new_height = sprintf("%.1d", ($original_height * $new_width) / $original_width);
-	}
-
-	return ($new_width, $new_height);
-
-} # End of calculate_dimensions.
 
 # -----------------------------------------------
 
@@ -74,16 +53,15 @@ sub new
 sub transformer
 {
 	my(%arg)   = @_;
-	my($image) = Image::Magick -> new();
+	my($image) = Imager -> new();
 
 	return sub
 	{
 		my($old_name, $extension) = @_;
-		my($result)     = $image -> Read($old_name);
-		my(@dimensions) = calculate_dimensions($image, $arg{'width'}, $arg{'height'});
-		$result         = $image -> Resize(sprintf '%i x %i', @dimensions);
-		my($fh, $name)  = tempfile('CGIuploaderXXXXX', UNLINK => 1, DIR => File::Spec -> tmpdir() );
-		$result         = $image -> Write($name);
+		my($result)        = $image -> read(file => $old_name, type => $extension);
+		my($new_image)     = $image -> scale(%arg);
+		my($fh, $name)     = tempfile('CGIuploaderXXXXX', UNLINK => 1, DIR => File::Spec -> tmpdir() );
+		$result            = $new_image -> write(file => $name, type => $extension);
 
 		return ($name, $extension);
 	};

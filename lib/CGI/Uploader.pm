@@ -25,7 +25,6 @@ our $VERSION = '2.90_02';
 
 has dbh      => (is => 'rw', required => 0, predicate => 'has_dbh', isa => 'Any');
 has dsn      => (is => 'rw', required => 0, predicate => 'has_dsn', isa => 'Any');
-has imager   => (is => 'rw', required => 0, isa => 'Any');
 has query    => (is => 'rw', required => 0, predicate => 'has_query', isa => 'Any');
 has manager  => (is => 'rw', required => 0, isa => 'Any');
 has temp_dir => (is => 'rw', required => 0, predicate => 'has_temp_dir', isa => 'Any');
@@ -294,29 +293,6 @@ sub do_insert
 
 # -----------------------------------------------
 
-sub do_transform
-{
-	my($self, $old_file_name, $meta_data, $option) = @_;
-	my($temp_fh, $temp_file_name) = tempfile('CGIuploaderXXXXX', UNLINK => 1, DIR => $self -> temp_dir() );
-
-	if ($$option{'imager'} -> isa('Imager') )
-	{
-		my($result)     = $$option{'imager'} -> read(file => $old_file_name, type => $$meta_data{'extension'});
-		my($new_image)  = $$option{'imager'} -> scale(%{$$option{'options'} });
-		my($extension)  = $$meta_data{'extension'};
-		$extension      = $extension ? ".$extension" : '';
-		$temp_file_name = "$temp_file_name$extension";
-		$result         = $new_image -> write(file => $temp_file_name, type => $$meta_data{'extension'});
-	}
-
-	$$meta_data{'size'} = (stat $temp_file_name)[7];
-
-	return ($temp_fh, $temp_file_name);
-
-} # End of do_transform.
-
-# -----------------------------------------------
-
 sub do_update
 {
 	my($self, $field_name, $meta_data, $option) = @_;
@@ -469,6 +445,7 @@ sub generate
 	my($option)    = {};
 	my($column)    = {};
 
+	my($ext);
 	my($id);
 	my($key);
 	my(@new_id, %new_id);
@@ -494,7 +471,7 @@ sub generate
 		# Simplify the interface. Allow the user to replace $id => [{...}] with $id => {...}.
 		# So, here we turn {...} back in to [{...}].
 
-		if (ref($$field{'records'}{$id}) eq 'HASH')
+		if (ref($$field{'records'}{$id}) ne 'ARRAY')
 		{
 			$$field{'records'}{$id} = [$$field{'records'}{$id}];
 		}
@@ -502,23 +479,22 @@ sub generate
 		for $record (@{$$field{'records'}{$id} })
 		{
 			# Note:
-			# o do_transform()      updates $$meta_data{'size'}
 			# o do_insert()         updates $$meta_data{'id'}
 			# o do_copy_temp_file() updates $$meta_data{'server_file_name'}
 			# o get_size()          updates $$meta_data{'width'}
 			# o get_size()          updates $$meta_data{'height'}
 
-			$$option{'imager'}        = $$record{'imager'} || $self -> imager();
-			$$option{'options'}       = $$record{'options'};
 			$$meta_data{'extension'}  = $$column{'extension'};
-			$temp_file_name           = $self -> do_transform($$column{'server_file_name'}, $meta_data, $option);
+			($temp_file_name, $ext)   = $record -> ($$column{'server_file_name'}, $$meta_data{'extension'});
 			$$option{'column_map'}    = $$field{'column_map'};
 			$$option{'file_scheme'}   = $$field{'file_scheme'};
 			$$option{'path'}          = $$field{'path'};
 			$$option{'sequence_name'} = $$field{'sequence_name'};
-			$$option{'table_name'}    = $$field{'table_name'}; # Preserve size from do_transform().
-			$$meta_data{$_}           = $$column{$_} for grep{! /size/} keys %$column;
+			$$option{'table_name'}    = $$field{'table_name'};
+			$$meta_data{$_}           = $$column{$_} for keys %$column;
+			$$meta_data{'extension'}  = $ext;
 			$$meta_data{'parent_id'}  = $id;
+			$$meta_data{'size'}       = (stat $temp_file_name)[7];
 
 			$$field{'manager'} -> do_insert($$meta_data{'server_file_name'}, $meta_data, $option);
 			$self -> copy_temp_file($temp_file_name, $meta_data, $option);
@@ -593,6 +569,7 @@ sub upload
 			if ($$store_option{'transform'})
 			{
 				($temp_file_name, $$meta_data{'extension'}) = $$store_option{'transform'} -> ($temp_file_name, $$meta_data{'extension'});
+				$$meta_data{'size'}                         = (stat $temp_file_name)[7];
 			}
 
 			$$store_option{'manager'} -> do_insert($field_name, $meta_data, $store_option);
@@ -790,11 +767,6 @@ sub validate_upload_options
 			 optional => 1,
 			 type     => UNDEF | SCALAR,
 		 },
-		 imager =>
-		 {
-			 optional => 1,
-			 type     => UNDEF | SCALAR,
-		 },
 		 manager =>
 		 {
 			 optional => 1,
@@ -826,7 +798,6 @@ sub validate_upload_options
 
 	$param{'column_map'}  ||= $self -> default_column_map();
 	$param{'file_scheme'} ||= 'simple';
-	$param{'imager'}      ||= $self -> imager();
 	$param{'manager'}     ||= $self -> manager() || $self;
 
 	return {%param};
@@ -852,7 +823,6 @@ CGI::Uploader - Manage CGI uploads using an SQL database
 	(
 		dbh      => $dbh,  # Optional. Or specify in call to upload().
 		dsn      => [...], # Optional. Or specify in call to upload().
-		imager   => $obj,  # Optional. Or specify in call to upload's transform.
 		manager  => $obj,  # Optional. Or specify in call to upload().
 		query    => $q,    # Optional.
 		temp_dir => $t,    # Optional.
@@ -873,7 +843,7 @@ CGI::Uploader - Manage CGI uploads using an SQL database
 	manager       => $obj,  # Optional. If present, all others params are optional.
 	sequence_name => $s,    # Optional, but mandatory if Postgres and no manager.
 	table_name    => $s,    # Optional if manager, but mandatory if no manager.
-	transform     => {...}  # Optional.
+	transform     => sub()  # Optional.
 	},
 	{ # Second, etc, optional sets of options for storing copies of the file.
 	},
@@ -951,14 +921,6 @@ See L<Details|/Details> for an explanation, including how this key interacts wit
 
 This key (dsn) is optional.
 
-=item imager => $obj
-
-This key may be specified globally or in the call to C<upload>'s I<transform>.
-
-This object is used to handle the transformation of images.
-
-This key (imager) is optional.
-
 =item manager => $obj
 
 This key may be specified globally or in the call to C<upload()>.
@@ -1025,7 +987,7 @@ C<Generate()> is a separate method.
 
 This section discusses these 2 processes.
 
-Tranformation:
+=head2 Tranformation
 
 =over 4
 
@@ -1035,7 +997,9 @@ This means transformation takes exactly 1 input file.
 
 =item The file is uploaded before being transformed
 
-=item The uploaded file is transformed and saved
+=item The uploaded file is transformed
+
+=item The transformed file is saved
 
 =item The uploaded file is discarded
 
@@ -1045,7 +1009,73 @@ This means transformation outputs exactly 1 file.
 
 =back
 
-Generation:
+=head2 Transformation Subroutines
+
+Transformation is a 2-stage process.
+
+The comments here apply to both (a) using the I<transform> key in the call to C<upload()>,
+and (b) to the subroutine names in the parameters passed in to C<generate()>.
+
+Assume you use the I<transform> key like this: transform => sub_name(params). Then:
+
+=over 4
+
+=item The subroutine is called right at the point you use the I<transform> key
+
+This subroutine must return an anonymous subroutine (i.e. a subref) which is a closure.
+
+=item The subref is called during the call to I<upload()>
+
+That is, as I<upload()> processes your options, the fact that the I<transform> key is present
+as one of your options causes the subref to be called.
+
+=back
+
+Here are the 2 examples I used in testing:
+
+	 transform => CGI::Uploader::Transform::ImageMagick::transformer(height => 400, width => 500)
+
+	 transform => CGI::Uploader::Transform::Imager::transformer(ypixels => 400, xpixels => 500)
+
+As you can see, C<CGI::Uploader> ships with 2 sample transformers, one using C<Image::Magick> and one
+using C<Imager>. Both of these do no more than resize the image.
+
+However, you can use this code as a guide to write any sort of transformer.
+
+It's vital that your code complies with the design of these transformers, with respect to the
+mandatory input parameters and the I<list> of return values.
+
+Input parameters:
+
+=over 4
+
+=item File name
+
+This is the name of the (temporary) file which has been uploaded, and is to be transformed.
+
+=item File extension
+
+This is the file's extension, determined by C<MIME::Types>.
+
+Some transformers, e.g. C<Imager>, need this parameter.
+
+=back
+
+Return values:
+
+=over 4
+
+=item Transformed file name
+
+This is the name of the (temporary) file output by your transformation process.
+
+=item Extension
+
+Returning the extension means your transformer can, say, convert a GIF file to a PNG.
+
+=back
+
+=head2 Generation
 
 =over 4
 
@@ -1062,13 +1092,13 @@ transformed at that time.
 
 That is, you specify a set of options which control the generation of 1 new file.
 
-=item You specify N >= 1 sets of such options
+=item You can specify N >= 1 sets of such options
 
 This means generation outputs N >= 1 new files.
 
 =item The old file stays in the database
 
-=item All the generated files' meta-data go in the database.
+=item All the generated files' meta-data goes in the database.
 
 =back
 
@@ -1220,10 +1250,10 @@ This key (path) is mandatory.
 
 I<Records> specifies which (primary) keys in the table are used to find files to process.
 
-These files are input files, and the options in the hashref specify how to use those files
+These files are input files, and the values pointed to by those keys specify how to use these files
 to generate output files.
 
-The keys in the hashref are the keys in the table. E.g.:
+The keys in the hashref are the keys in the database table. E.g.:
 
 	records => {1 => [...], 99 => [...]}
 
@@ -1236,32 +1266,27 @@ to change that column name.
 
 The arrayrefs are used to specify N >= 1 output files for each input file.
 
-So, each arrayref contains N >= 1 hashrefs, and each hashref specifies how to generate 1 output file. E.g.:
+So, each arrayref contains N >= 1 subroutine names, and each subroutine specifies how to generate 1 output file. E.g.:
 
-	records => {1 => [{...}, {...}], 99 => [{...}]}
+	records => {1 => [sub_1(...), sub_2(...)], 99 => [sub_n(...)]}
 
 This says use id 1 to generate 2 output files, and use id 99 to generate 1 output file.
 
 To make life easier, if you only wish to generate a single output file, you can reduce this:
 
-	records => {99 => [{...}]}
+	records => {99 => [sub_1(...)]}
 
 to this:
 
-	records => {99 => {...} }
+	records => {99 => sub_1(...)}
 
-The structure of the inner-most hashrefs is exactly the same as the hashrefs pointed to by the
-<transform> key, documented at L</transform>. E.g.:
-
-For an I<imager> object of type C<Image::Magick>:
-
-	records => {1 => [{imager => $obj, options => {width => $w, height => $h} }, {...}], 99 => [{...}]}
-
-or, for an I<imager> object of type C<Imager>:
-
-	records => {1 => [{imager => $obj, options => {xpixels => $x, ypixels => $y}, {...}], 99 => [{...}]}
+The format of the subroutine names is exactly the same as for the <transform> key.
+See L<Transformation Subroutines|/Transformation Subroutines>.
 
 C<CGI::Uploader> takes care of the I<meta-data> for each generated file. See L<Meta-data|/Meta-data>.
+
+Sample code: See C<CGI::Uploader::Test>, which uses C<CGI::Uploader::Transform::ImageMagick> and
+C<CGI::Uploader::Transform::Imager>. C<CGI::Uploader> ships with these 3 modules.
 
 This key (records) is mandatory.
 
@@ -1334,7 +1359,7 @@ I<Date_stamp> has an underscore in it in case your database regards datastamp as
 
 =item extension
 
-This is provided by the C<File::Basename> module.
+This is provided by the C<MIME::Types> module.
 
 The extension is a string I<without> the leading dot.
 
@@ -1370,11 +1395,13 @@ For the uploaded file itself, the value will be 0.
 =item server_file_name
 
 The server_file_name is the name under which the file is finally stored on the file system
-of the web server. It is not the temporary file name used during the upload process.
+of the web server.
+
+It is not one of the temporary file names used during the upload or transformation processes.
 
 =item size
 
-This is the size in bytes of the uploaded file.
+This is the size in bytes of the uploaded or transformed file.
 
 =item width
 
@@ -1411,7 +1438,7 @@ C<do_upload()> returns a hashref of meta-data associated with the file.
 
 =item Transform the file
 
-If requested, call C<do_transform()>.
+If requested, call the sub pointed to by the C<transform> option.
 
 =item Save the meta-data
 
@@ -1448,7 +1475,7 @@ form field.
 
 Use multiple elements in the arrayref to store multiple sets of meta-data, all based on the same uploaded file.
 
-Each hashref contains 1 .. 5 of the following keys:
+Each hashref contains 1 or more of the following keys:
 
 =over 4
 
@@ -1649,106 +1676,14 @@ just in case you need it.
 This key is mandatory if you do not use the I<manager> key, since without the I<manager> key,
 I<table_name> must be passed in to the default manager (C<CGI::Uploader>).
 
-=item transform => {...}
+=item transform => subroutine_name(%params)
 
-This key points to a set of options which are used to transform the uploaded file.
+This key points to a subroutine (not method) which is used to help transform the uploaded file.
 
-As stated above, transformation takes 1 input file, uploads it, transforms it, saves the transformed
+As stated above, transformation takes 1 file being uploaded, transforms it, saves the transformed
 file, and discards the uploaded file.
 
-See also C<generate()>, for a completely different way of processing files.
-
-Here are the 2 examples I used in testing, but not at the same time!
-
-	 transform =>
-	 {
-		 imager  => Image::Magick -> new(), # Optional. Default.
-		 options => {height => 400, width => 500},
-	 }
-
-	 transform =>
-	 {
-		 imager  => Imager -> new(),
-		 options => {xpixels => 400, ypixels => 500},
-	 }
-
-Clearly, I<transform> points to a hashref:
-
-=over 4
-
-=item imager => $obj
-
-The I<imager> key is optional. If omitted, C<CGI::Uploader> creates an object of type C<Image::Magick>,
-and uses that.
-
-You can pass in an object whose class is a descendent of C<Image::Magick> or C<Imager>.
-
-They are treated differently, as explained next.
-
-=item height => 'Int', width => 'Int'
-
-If the $obj isa('Image::Magick') you must pass in at least 1 of I<height> and I<width>.
-
-The missing one is calculated from the size of the input image and the given parameter.
-
-Here's what happens:
-
-	if ($$option{'imager'} -> isa('Image::Magick') )
-	{
-		my($result)     = $$option{'imager'} -> Read($old_file_name);
-		my($dimensions) = $self -> calculate_dimensions($$option{'imager'}, $option);
-		$result         = $$option{'imager'} -> Resize($dimensions);
-		$result         = $$option{'imager'} -> Write($temp_file_name);
-	}
-
-Note: C<calculate_dimensions()> calls Get('width', 'height').
-
-This means if you wish to intercept these calls with a custom object, your C<Image::Magick>-based object must respond to
-these calls:
-
-=over 4
-
-=item Get()
-
-=item Read()
-
-=item Resize()
-
-=item Write()
-
-=back
-
-=item options => {xpixels => 400, ypixels => 500}
-
-If the $obj isa('Imager') you must pass in suitable parameters for C<Imager's> C<scale()> method.
-
-Any such parameters are acceptable. I just used I<xpixels> and I<ypixels> during testing.
-
-Here's what happens:
-
-	if ($$option{'imager'} -> isa('Imager') )
-	{
-		my($result)     = $$option{'imager'} -> read(file => $old_file_name, type => $$meta_data{'extension'});
-		my($new_image)  = $$option{'imager'} -> scale(%{$$option{'options'} });
-		my($extension)  = $$meta_data{'extension'};
-		$extension      = $extension ? ".$extension" : '';
-		$temp_file_name = "$temp_file_name$extension";
-		$result         = $new_image -> write(file => $temp_file_name, type => $$meta_data{'extension'});
-	}
-
-So, to intercept these calls, a descendent of C<Imager> must respond to these calls:
-
-=over 4
-
-=item read()
-
-=item scale()
-
-=item write()
-
-=back
-
-=back
+See L<Transformation Subroutines|/Transformation Subroutines> for details.
 
 This key (transform) is optional.
 
@@ -1865,7 +1800,11 @@ If you want to run any of the test scripts in cgi-bin/, you'll need C<HTML::Temp
 
 =item Image::Magick
 
-If you specify the I<transform> option without the I<imager> option, C<CGI::Uploader> uses C<Imager::Magick>.
+The test module C<CGI::Uploader::Test> uses C<Image::Magick>.
+
+=item Imager
+
+The test module C<CGI::Uploader::Test> uses C<Imager>.
 
 =back
 

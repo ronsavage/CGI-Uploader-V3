@@ -1,8 +1,12 @@
 Revision history for Perl extension CGI::Uploader.
 
+2.90_02 Fri Dec 12 13:04:00 EST 2008
+		- Redesign the handling of the transform option and the generate method.
+		  Document and patch sample code to match
+
 2.90_01 Thu Nov 27 10:51:00 EST 2008
-	 - Rewrite all code. New API.
-	 - Change EDT in this file to EST because the date parser rejects EDT
+		- Rewrite all code. New API.
+		- Change EDT in this file to EST because the date parser rejects EDT
 
 2.15 Sun Jul 15 07:21:24 EST 2007
     - no functionality changes

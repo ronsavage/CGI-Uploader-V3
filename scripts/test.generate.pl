@@ -6,6 +6,8 @@ use warnings;
 use CGI::Uploader::Config;
 use CGI::Uploader;
 use DBI;
+use CGI::Uploader::Transform::ImageMagick;
+use CGI::Uploader::Transform::Imager;
 
 # ------------------------
 
@@ -18,31 +20,11 @@ my($data)   = $up -> generate
  path        => '/tmp',
  records     =>
  {
-	 2  =>
+	 1  =>
 	 [
-	  {
-		  options =>
-		  {
-			  width  => 300,
-			  height => 200,
-		  },
-	  },
-	  {
-		  options =>
-		  {
-			  width  => 200,
-			  height => 100,
-		  },
-	  },
+	  CGI::Uploader::Transform::ImageMagick::transformer(width => 500, height => 400),
+	  CGI::Uploader::Transform::Imager::transformer(xpixels => 500, ypixels => 400),
 	 ],
-	 1 =>
-	  {
-		  options =>
-		  {
-			  width  => 800,
-			  height => 666,
-		  },
-	  },
  },
  sequence_name => 'uploads_id_seq',
  table_name    => 'uploads',
