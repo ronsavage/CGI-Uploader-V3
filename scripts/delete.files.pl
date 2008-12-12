@@ -3,7 +3,7 @@
 # Name:
 #	delete.files.pl.
 
-use lib '/home/ron/perl.modules/CGI-Up/lib';
+use lib '/home/ron/perl.modules/CGI-Uploader/lib';
 use strict;
 use warnings;
 

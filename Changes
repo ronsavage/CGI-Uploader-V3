@@ -1,5 +1,8 @@
 Revision history for Perl extension CGI::Uploader.
 
+2.90_03 Fri Dec 12 16:07:00 EST 2008
+		- Fix up a few paths which still referred to CGI/Up (the intermediate name of V 2.90+)
+
 2.90_02 Fri Dec 12 13:04:00 EST 2008
 		- Redesign the handling of the transform option and the generate method.
 		  Document and patch sample code to match
