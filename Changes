@@ -1,5 +1,7 @@
 Revision history for Perl extension CGI::Uploader.
 
+    - Renamed do_insert and do_update to just 'insert' and 'update'         
+
 2.90_03 Fri Dec 12 16:07:00 EST 2008
 		- Fix up a few paths which still referred to CGI/Up (the intermediate name of V 2.90+)
 

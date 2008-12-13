@@ -240,7 +240,7 @@ sub delete
 # -----------------------------------------------
 # Note: $field_name is not used in the default manager.
 
-sub do_insert
+sub insert
 {
 	my($self, $field_name, $meta_data, $option) = @_;
 
@@ -289,11 +289,11 @@ sub do_insert
 
 	$$meta_data{'id'} = $self -> dbh() -> last_insert_id(undef, undef, $$option{'table_name'}, undef);
 
-} # End of do_insert.
+} # End of insert.
 
 # -----------------------------------------------
 
-sub do_update
+sub update
 {
 	my($self, $field_name, $meta_data, $option) = @_;
 
@@ -323,7 +323,7 @@ sub do_update
 		$sth -> execute(@bind, $$meta_data{'id'});
 	}
 
-} # End of do_update.
+} # End of update.
 
 # -----------------------------------------------
 
@@ -479,7 +479,7 @@ sub generate
 		for $record (@{$$field{'records'}{$id} })
 		{
 			# Note:
-			# o do_insert()         updates $$meta_data{'id'}
+			# o insert()         updates $$meta_data{'id'}
 			# o do_copy_temp_file() updates $$meta_data{'server_file_name'}
 			# o get_size()          updates $$meta_data{'width'}
 			# o get_size()          updates $$meta_data{'height'}
@@ -496,7 +496,7 @@ sub generate
 			$$meta_data{'parent_id'}  = $id;
 			$$meta_data{'size'}       = (stat $temp_file_name)[7];
 
-			$$field{'manager'} -> do_insert($$meta_data{'server_file_name'}, $meta_data, $option);
+			$$field{'manager'} -> insert($$meta_data{'server_file_name'}, $meta_data, $option);
 			$self -> copy_temp_file($temp_file_name, $meta_data, $option);
 			$self -> get_size($meta_data);
 
@@ -572,13 +572,13 @@ sub upload
 				$$meta_data{'size'}                         = (stat $temp_file_name)[7];
 			}
 
-			$$store_option{'manager'} -> do_insert($field_name, $meta_data, $store_option);
+			$$store_option{'manager'} -> insert($field_name, $meta_data, $store_option);
 			$self -> copy_temp_file($temp_file_name, $meta_data, $store_option);
 
 			if ($store_count == 1)
 			{
 				$self -> get_size($meta_data);
-				$$store_option{'manager'} -> do_update($field_name, $meta_data, $store_option);
+				$$store_option{'manager'} -> update($field_name, $meta_data, $store_option);
 			}
 
 			push @meta_data, {field => $field_name, id => $$meta_data{'id'} };
@@ -1442,12 +1442,12 @@ If requested, call the sub pointed to by the C<transform> option.
 
 =item Save the meta-data
 
-C<upload()> calls the C<do_insert()> method on the manager object to insert the meta-data into the
+C<upload()> calls the C<insert()> method on the manager object to insert the meta-data into the
 database.
 
 The default manager is C<CGI::Uploader> itself.
 
-C<do_insert()> saves the I<last insert id> from that insert in the meta-data hashref.
+C<insert()> saves the I<last insert id> from that insert in the meta-data hashref.
 
 =item Create the permanent file
 
@@ -1463,7 +1463,7 @@ C<get_size()> saves the image's dimensions in the meta-data hashref.
 
 =item Update the database with the permanent file's name and image size
 
-C<upload()> calls the C<do_update()> method on the manager object to put the permanent file's name
+C<upload()> calls the C<update()> method on the manager object to put the permanent file's name
 into the database record, along with the height and width.
 
 =back
@@ -1614,7 +1614,7 @@ This is an instance of your class which will manage the transfer of meta-data to
 In the case you provide the I<manager> key, your object is responsible for saving (or discarding!) the meta-data.
 
 If you provide an object here, C<CGI::Uploader> will call
-$object => do_insert($field_name, $meta_data, $store_option).
+$object => insert($field_name, $meta_data, $store_option).
 
 Parameters are:
 
@@ -1641,7 +1641,7 @@ associated with the 'current' form field.
 
 If you do not provide the I<manager> key, C<CGI::Uploader> will do the work itself.
 
-Later, C<CGI::Uploader> will call $object => do_update($field_name, $meta_data, $store_option),
+Later, C<CGI::Uploader> will call $object => update($field_name, $meta_data, $store_option),
 as explained above, under I<Processing Steps>.
 
 This key (manager) is optional.
