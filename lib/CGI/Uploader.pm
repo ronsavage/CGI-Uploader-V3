@@ -251,7 +251,7 @@ sub insert
 	my($db_server) = $self -> dbh() -> get_info(17);
 	my($sql)       = "insert into $$option{'table_name'}";
 
-	# Ensure, if the caller is using Postgres, and they want the id field populated,
+	# Ensure, if the caller is using PostgreSQL, and they want the id field populated,
 	# that we stuff the next value from the caller's sequence into it.
 
 	if ( ($db_server eq 'PostgreSQL') && $$option{'column_map'}{'id'})
@@ -613,7 +613,7 @@ sub validate_delete_options
 				 {
 					 my($result) = 1;
 
-					 # If there is a dbh, is the database Postgres,
+					 # If there is a dbh, is the database PostgreSQL,
 					 # and, if so, is the sequence_name provided?
 
 					 if ($$_[0])
@@ -741,7 +741,7 @@ sub validate_upload_options
 				 {
 					 my($result) = 1;
 
-					 # If there is a dbh, is the database Postgres,
+					 # If there is a dbh, is the database PostgreSQL,
 					 # and, if so, is the sequence_name provided?
 
 					 if ($$_[0])
@@ -841,7 +841,7 @@ CGI::Uploader - Manage CGI uploads using an SQL database
 	dsn           => [...], # Optional. mandatory if no manager.
 	file_scheme   => $s,    # Optional.
 	manager       => $obj,  # Optional. If present, all others params are optional.
-	sequence_name => $s,    # Optional, but mandatory if Postgres and no manager.
+	sequence_name => $s,    # Optional, but mandatory if PostgreSQL and no manager.
 	table_name    => $s,    # Optional if manager, but mandatory if no manager.
 	transform     => sub()  # Optional.
 	},
@@ -878,7 +878,7 @@ The simplest option, then, is to use
 
 and let C<CGI::Uploader> do all the work.
 
-For Postgres, make that
+For PostgreSQL, make that
 
 	CGI::Uploader -> new() -> upload(file_name => [{dbh => $dbh, sequence_name => 'uploads_id_seq', table_name => 'uploads'}]);
 
@@ -1294,7 +1294,7 @@ This key (records) is mandatory.
 
 I<Sequence_name> is documented under L<Details|/Details>.
 
-This key is mandatory if you are using Postgres, and optional if not.
+This key is mandatory if you are using PostgreSQL, and optional if not.
 
 =item table_name => $string
 
@@ -1377,7 +1377,7 @@ The id is (presumably) the primary key of your table.
 
 This value is 0 until the meta-data is saved in the database.
 
-In the case of Postgres, it will be populated by the sequence named with the I<sequence_name> key.
+In the case of PostgreSQL, it will be populated by the sequence named with the I<sequence_name> key.
 
 =item mime_type
 
@@ -1656,13 +1656,13 @@ This key (path) is mandatory.
 
 This is the name of the sequence used to generate values for the primary key of the table.
 
-You would normally only need this when using Postgres.
+You would normally only need this when using PostgreSQL.
 
 This key is optional if you use the I<manager> key, since in that case you can do anything in your own
 storage manager code. If you do provide the I<sequence_name> key, it is passed in to your manager
 just in case you need it.
 
-This key is mandatory if you use Postgres and do not use the I<manager> key, since without the I<manager> key,
+This key is mandatory if you use PostgreSQL and do not use the I<manager> key, since without the I<manager> key,
 I<sequence_name> must be passed in to the default manager (C<CGI::Uploader>).
 
 =item table_name => $string
@@ -1760,7 +1760,7 @@ If you use C<CGI::Uploader::Test>, it uses C<CGI::Uploader::Config>, which uses 
 
 =item DBD::Pg
 
-I used Postgres when writing and testing V 3, and hence I used C<DBD::Pg>.
+I used PostgreSQL when writing and testing V 3, and hence I used C<DBD::Pg>.
 
 Examine lib/CGI/Uploader/.ht.cgi.uploader.conf for details. This file is read in by C<CGI::Uploader::Config>.
 
