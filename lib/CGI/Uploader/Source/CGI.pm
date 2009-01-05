@@ -1,4 +1,4 @@
-package CGI::Uploader::Source::Default;
+package CGI::Uploader::Source::CGI;
 
 use strict;
 use warnings;
@@ -105,14 +105,14 @@ sub upload
 
 =head1 NAME
 
-CGI::Uploader::Source::Default - Default uploader
+CGI::Uploader::Source::CGI - Default uploader
 
 =head1 Synopsis
 
 
 =head1 Description
 
-C<CGI::Uploader::Source::Default> is a pure Perl module.
+C<CGI::Uploader::Source::CGI> is a pure Perl module.
 
 =head1 Public Repository
 

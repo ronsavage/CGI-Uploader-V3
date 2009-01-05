@@ -55,9 +55,9 @@ sub BUILD
 
 	if (! $self -> has_source() )
 	{
-		require CGI::Uploader::Source::Default;
+		require CGI::Uploader::Source::CGI;
 
-		$self -> source(CGI::Uploader::Source::Default -> new(temp_dir => $self -> temp_dir() ) );
+		$self -> source(CGI::Uploader::Source::CGI -> new(temp_dir => $self -> temp_dir() ) );
 	}
 
 }	# End of BUILD.
@@ -715,7 +715,7 @@ CGI::Uploader - Manage CGI uploads using an SQL database
 		dbh      => $dbh,  # Optional. Or specify in call to upload().
 		dsn      => [...], # Optional. Or specify in call to upload().
 		manager  => $obj,  # Optional. Or specify in call to upload().
-		query    => $q,    # Optional.
+		source   => $s,    # Optional.
 		temp_dir => $t,    # Optional.
 	);
 
@@ -820,35 +820,61 @@ This object is used to handle the transfer of meta-data into the database. See L
 
 This key (manager) is optional.
 
-=item query => $q
+=item source => $s
 
-Use this to pass in a query object.
+Use this to pass in a source object, whose job it is to actually upload the file.
 
-This object is expected to belong to one of these classes:
+This design allows module-specific code (e.g. C<CGI>, C<Apache::Request>, C<Apache2::Request>) to be
+implemented outside C<CGI::Uploader>.
+
+The default source object is C<CGI::Uploader::Source::CGI>, which uses C<CGI> to do the uploading.
+
+C<CGI::Uploader> also ships with C<CGI::Uploader::Source::Apache> and C<CGI::Uploader::Source::Apache2>.
+
+Source object all share these mandatory properties:
 
 =over 4
 
-=item Apache::Request
+=item They are descendents of C<CGI::Uploader::Source>
 
-=item Apache2::Request
+=item They return a hashref of attributes for the uploaded file
 
-=item CGI
+The format of this hashref is:
+
+=over 4
+
+=item client_file_name => 'String'
+
+This is the name of the file on the client's machine. It may I<or may not> have path information prepended,
+depending on the web client.
+
+=item extension => 'String'
+
+This is normally provided by the C<MIME::Types> module.
+
+The extension is a string I<without> the leading dot.
+
+If an extension cannot be determined, return '', the empty string.
+
+=item mime_type => 'String'
+
+This is normally provided by the C<MIME::Types> module, if it can determine the type.
+
+If not, return '', the empty string.
+
+=item server_temp_name => 'String'
+
+This is the name of the I<temporary> file on the server, into which the uploaded file has be copied.
+
+C<CGI::Uploader> will determine a I<permanent> file name later.
+
+=item size => Integer
+
+This is the number of bytes in the I<temporary> file.
+
+This value will be stored in the database, unless you supply a transformation option.
 
 =back
-
-If not provided, an object of type C<CGI> will be created and used to do the uploading.
-
-If you want to use a different type of object, just ensure it has these CGI-compatible methods:
-
-=over 4
-
-=item cgi_error()
-
-This is only called if something goes wrong.
-
-=item upload()
-
-=item uploadInfo()
 
 =back
 
@@ -858,7 +884,7 @@ http://rt.cpan.org/Ticket/Display.html?id=14838
 
 There is a comment in the source code of CGI::Simple about this issue. Search for 14838.
 
-This key (query) is optional.
+This key (source) is optional.
 
 =item temp_dir => $string
 
@@ -1258,7 +1284,7 @@ If an extension cannot be determined, the value will be '', the empty string.
 
 =item height
 
-This is provided by the I<Image::Size> module, if it recognizes the type of the file.
+This is provided by the C<Image::Size> module, if it recognizes the type of the file.
 
 For non-image files, the value will be 0.
 
@@ -1272,7 +1298,7 @@ In the case of PostgreSQL, it will be populated by the sequence named with the I
 
 =item mime_type
 
-This is provided by the I<MIME::Types> module, if it can determine the type.
+This is provided by the C<MIME::Types> module, if it can determine the type.
 
 If not, it is '', the empty string.
 
@@ -1296,7 +1322,7 @@ This is the size in bytes of the uploaded or transformed file.
 
 =item width
 
-This is detrmined by the I<Image::Size> module, if it recognizes the type of the file.
+This is detrmined by the C<Image::Size> module, if it recognizes the type of the file.
 
 For non-image files, the value will be 0.
 
@@ -1320,7 +1346,7 @@ A mini-synopsis:
 
 =item Upload file
 
-C<upload()> calls your source object, by default C<CGI::Uploader::Source::Default>, to do the work of uploading
+C<upload()> calls your source object, by default C<CGI::Uploader::Source::CGI>, to do the work of uploading
 the caller's file to a temporary file.
 
 This is done once, whereas the following steps are done once for each hashref of storage options
