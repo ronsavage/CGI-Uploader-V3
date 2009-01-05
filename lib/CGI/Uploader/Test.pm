@@ -7,7 +7,7 @@ use File::Copy; # For copy.
 use HTML::Template;
 use Squirrel;
 
-our $VERSION = '2.90_01';
+our $VERSION = '2.90_03';
 
 # -----------------------------------------------
 
@@ -359,7 +359,7 @@ sub use_cgi_uploader_v3
 	if (@file_name)
 	{
 		require CGI::Uploader::Transform::ImageMagick;
-		require CGI::Uploader::Transform::Imager;
+#		require CGI::Uploader::Transform::Imager;
 
 		my($meta_data) = CGI::Uploader -> new
 		(
@@ -374,8 +374,9 @@ sub use_cgi_uploader_v3
 			 path          => '/tmp',
 			 sequence_name => 'uploads_id_seq',
 			 table_name    => 'uploads',
-			 transform     => CGI::Uploader::Transform::ImageMagick::transformer(height => 560, width => 400),
-#			 transform     => CGI::Uploader::Transform::Imager::transformer(ypixels => 400, xpixels => 400),
+			 transform     => CGI::Uploader::Transform::ImageMagick::transform(height => 560, width => 400),
+# Imager does not work. It always says 'empty imput image'.
+#			 transform     => CGI::Uploader::Transform::Imager::transform(ypixels => 560, xpixels => 400),
 		 }]
 		 )} sort @file_name
 		);

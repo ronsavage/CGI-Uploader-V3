@@ -35,7 +35,7 @@ our @EXPORT = qw(
 
 );
 
-our $VERSION = '2.90_02';
+our $VERSION = '2.90_03';
 
 # -----------------------------------------------
 
@@ -50,7 +50,7 @@ sub new
 
 # -----------------------------------------------
 
-sub transformer
+sub transform
 {
 	my(%arg)   = @_;
 	my($image) = Imager -> new();
@@ -58,15 +58,15 @@ sub transformer
 	return sub
 	{
 		my($old_name, $extension) = @_;
-		my($result)        = $image -> read(file => $old_name, type => $extension);
-		my($new_image)     = $image -> scale(%arg);
-		my($fh, $name)     = tempfile('CGIuploaderXXXXX', UNLINK => 1, DIR => File::Spec -> tmpdir() );
-		$result            = $new_image -> write(file => $name, type => $extension);
+		my($result)    = $image -> read(file => $old_name, type => $extension);
+		my($new_image) = $image -> scale(%arg);
+		my($fh, $name) = tempfile('CGIuploaderXXXXX', UNLINK => 1, DIR => File::Spec -> tmpdir() );
+		$result        = $new_image -> write(file => $name, type => $extension);
 
 		return ($name, $extension);
 	};
 
-} # End of transformer.
+} # End of transform.
 
 # -----------------------------------------------
 

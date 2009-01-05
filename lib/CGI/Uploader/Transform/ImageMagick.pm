@@ -35,7 +35,7 @@ our @EXPORT = qw(
 
 );
 
-our $VERSION = '2.90_02';
+our $VERSION = '2.90_03';
 
 # -----------------------------------------------
 
@@ -71,7 +71,7 @@ sub new
 
 # -----------------------------------------------
 
-sub transformer
+sub transform
 {
 	my(%arg)   = @_;
 	my($image) = Image::Magick -> new();
@@ -81,14 +81,14 @@ sub transformer
 		my($old_name, $extension) = @_;
 		my($result)     = $image -> Read($old_name);
 		my(@dimensions) = calculate_dimensions($image, $arg{'width'}, $arg{'height'});
-		$result         = $image -> Resize(sprintf '%i x %i', @dimensions);
+		$result         = $image -> Resize(geometry => sprintf '%i x %i', @dimensions);
 		my($fh, $name)  = tempfile('CGIuploaderXXXXX', UNLINK => 1, DIR => File::Spec -> tmpdir() );
 		$result         = $image -> Write($name);
 
 		return ($name, $extension);
 	};
 
-} # End of transformer.
+} # End of transform.
 
 # -----------------------------------------------
 

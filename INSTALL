@@ -1,32 +1,27 @@
 Introduction
 ------------
-This is the INSTALL file for CGI::Up, the intermediate version of CGI::Uploader V 3.
-
-Using the name CGI::Up allows us to have both modules installed side-by-side.
-
-Indeed, the test code for CGI::Up uses CGI::Uploader. See CGI::Uploader::Test.
+This is the INSTALL file for CGI::Uploader 2.90_xx, the intermediate version of CGI::Uploader V 3.
 
 Installation
 ------------
 1)
 This distro can be installed just like any other, but don't do that.
 
-Just unpack the distro, and edit lib/CGI/Up/.htcgiup.conf to suit.
+Just unpack the distro, and edit lib/CGI/Uploader/.ht.cgi.uploader.conf to suit.
 
 Check your edits:
 
 shell>perl -Ilib scripts/report.config.pl
 
 Keep in mind that if your 'use lib' line points to this unpacked distro,
-all code will use lib/CGI/Up/.htcgiup.conf.
+all code will use lib/CGI/Uploader/.ht.cgi.uploader.conf, and not the one
+installed in the Perl module directory.
 
 However! After 'make install', code without a 'use lib' will in fact use
 the installed version of this file. On my machine, under Debian, that's
-/usr/local/share/perl/5.10.0/CGI/Up/.htcgiup.conf.
+/usr/local/share/perl/5.10.0/CGI/Uploader/.ht.cgi.uploader.conf.
 
 If these files are different, you will become very confused.
-
-Your punishment for /that/ mistake is to eat a bowl of Vegemite Icecream. Mega-yuk.
 
 2)
 Install the module.
@@ -34,7 +29,7 @@ Install the module.
 3)
 Edit cgi-bin/*.pl to fix the 'use lib' lines.
 
-Copy these files into your (Apache's) cgi-bin/ dir, and set their execute bits.
+Copy the example files into your (Apache's) cgi-bin/ dir, and set their execute bits.
 
 shell>cp cgi-bin/*.pl ~/httpd/prefork/cgi-bin
 shell>chmod a+x ~/httpd/prefork/cgi-bin/use.cgi.*.pl
@@ -56,12 +51,12 @@ Create the database table into which the meta-data for uploaded files will be pu
 
 shell>perl -Ilib scripts/create.table.pl
 
-This uses lib/CGI/Up/.htcgiup.conf.
+This uses lib/CGI/Uploader/.ht.cgi.uploader.conf.
 
 7)
 Point your web client (Firefox) at /cgi-bin/use.cgi.simple.pl
 
-Note: neither CGI::Simple nor CGI::Uploader::Test's method use_cgi_simple
+Note: neither CGI::Simple nor CGI::Uploader::Test's method use_cgi_simple()
 outputs to the database.
 
 8)

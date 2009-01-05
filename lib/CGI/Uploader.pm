@@ -19,14 +19,14 @@ use Params::Validate ':all';
 
 use Squirrel;
 
-our $VERSION = '2.90_02';
+our $VERSION = '2.90_03';
 
 # -----------------------------------------------
 
 has dbh      => (is => 'rw', required => 0, predicate => 'has_dbh', isa => 'Any');
 has dsn      => (is => 'rw', required => 0, predicate => 'has_dsn', isa => 'Any');
-has query    => (is => 'rw', required => 0, predicate => 'has_query', isa => 'Any');
 has manager  => (is => 'rw', required => 0, isa => 'Any');
+has source   => (is => 'rw', required => 0, predicate => 'has_source', isa => 'Any');
 has temp_dir => (is => 'rw', required => 0, predicate => 'has_temp_dir', isa => 'Any');
 
 # -----------------------------------------------
@@ -44,42 +44,20 @@ sub BUILD
 		$self -> dbh(DBI -> connect(@{$self -> dsn()}) );
 	}
 
-	# Ensure a query object is available.
-
-	if ($self -> has_query() )
-	{
-		my($ok)   = 0;
-		my(@type) = (qw/Apache::Request Apache2::Request CGI/);
-
-		my($type);
-
-		for $type (@type)
-		{
-			if ($self -> query() -> isa($type) )
-			{
-				$ok = 1;
-
-				last;
-			}
-		}
-
-		if (! $ok)
-		{
-			confess 'Your query object must be one of these types: ' . join(', ', @type);
-		}
-	}
-	else
-	{
-		require CGI;
-
-		$self -> query(CGI -> new() );
-	}
-
 	# Ensure a temp dir name is available.
 
 	if (! $self -> has_temp_dir() )
 	{
 		$self -> temp_dir(File::Spec -> tmpdir() );
+	}
+
+	# Ensure a source object is available.
+
+	if (! $self -> has_source() )
+	{
+		require CGI::Uploader::Source::Default;
+
+		$self -> source(CGI::Uploader::Source::Default -> new(temp_dir => $self -> temp_dir() ) );
 	}
 
 }	# End of BUILD.
@@ -88,7 +66,7 @@ sub BUILD
 
 sub copy_temp_file
 {
-	my($self, $temp_file_name, $meta_data, $option) = @_;
+	my($self, $meta_data, $option) = @_;
 	my($path) = $$option{'path'};
 	$path     =~ s|^(.+)/$|$1|;
 
@@ -112,7 +90,7 @@ sub copy_temp_file
 	$extension                      = $extension ? ".$extension" : '';
 	$$meta_data{'server_file_name'} = File::Spec -> catdir($path, "$$meta_data{'id'}$extension");
 
-	copy($temp_file_name, $$meta_data{'server_file_name'});
+	copy($$meta_data{'server_temp_name'}, $$meta_data{'server_file_name'});
 
 } # End of copy_temp_file.
 
@@ -238,6 +216,115 @@ sub delete
 } # End of delete.
 
 # -----------------------------------------------
+
+sub generate
+{
+	my($self, %field) = @_;
+	my($field)        = $self -> validate_generate_options(%field);
+
+	# Ensure a dbh or dsn was specified.
+
+	if (! $self -> has_dbh() && ! ($$field{'dbh'} || $$field{'dsn'}) )
+	{
+		confess "You must provide at least one of dbh and dsn for 'generate'";
+	}
+
+	# Use either the caller's dbh or fabricate one.
+
+	$self -> default_dbh($$field{'dsn'});
+
+	my(@id)         = keys %{$$field{'records'} };
+	my($sql)        = "select * from $$field{'table_name'} where $$field{'column_map'}{'id'} in (" . ('?, ') x $#id . '?)';
+	my($data)      = $self -> dbh() -> selectall_hashref($sql, 'id', {}, @id);
+	my($map)       = $self -> default_column_map();
+	my($meta_data) = {};
+	my($option)    = {};
+	my($column)    = {};
+
+	my($ext);
+	my($id);
+	my($key);
+	my(@new_id, %new_id);
+	my($record);
+	my($temp_file_name);
+
+	for $id (keys %$data)
+	{
+		for $key (keys %$map)
+		{
+			# Skip columns the caller does not want processed.
+
+			if (! $$field{'column_map'}{$key})
+			{
+				next;
+			}
+
+			$$column{$key} = $$data{$id}{$$field{'column_map'}{$key} };
+		}
+
+		@new_id = ();
+
+		# Simplify the interface. Allow the user to replace $id => [{...}] with $id => {...}.
+		# So, here we turn {...} back in to [{...}].
+
+		if (ref($$field{'records'}{$id}) ne 'ARRAY')
+		{
+			$$field{'records'}{$id} = [$$field{'records'}{$id}];
+		}
+
+		for $record (@{$$field{'records'}{$id} })
+		{
+			# Note:
+			# o insert()         updates $$meta_data{'id'}
+			# o copy_temp_file() updates $$meta_data{'server_file_name'}
+			# o get_size()       updates $$meta_data{'width'}
+			# o get_size()       updates $$meta_data{'height'}
+
+			$$meta_data{'extension'}  = $$column{'extension'};
+			($temp_file_name, $ext)   = $record -> ($$column{'server_file_name'}, $$meta_data{'extension'});
+			$$option{'column_map'}    = $$field{'column_map'};
+			$$option{'file_scheme'}   = $$field{'file_scheme'};
+			$$option{'path'}          = $$field{'path'};
+			$$option{'sequence_name'} = $$field{'sequence_name'};
+			$$option{'table_name'}    = $$field{'table_name'};
+			$$meta_data{$_}           = $$column{$_} for keys %$column;
+			$$meta_data{'extension'}  = $ext;
+			$$meta_data{'parent_id'}  = $id;
+			$$meta_data{'size'}       = (stat $temp_file_name)[7];
+
+			$$field{'manager'} -> insert($$meta_data{'server_file_name'}, $meta_data, $option);
+			$self -> copy_temp_file($temp_file_name, $meta_data, $option);
+			$self -> get_size($meta_data);
+
+			$sql = "update $$field{'table_name'} set $$field{'column_map'}{'width'} = ?, " .
+				"$$field{'column_map'}{'height'} = ? where $$field{'column_map'}{'id'} = ?";
+
+			$self -> dbh() -> do($sql, {}, $$meta_data{'height'}, $$meta_data{'width'}, $$meta_data{'id'});
+
+			push @new_id, $$meta_data{'id'};
+
+			File::Temp::cleanup();
+		}
+
+		$new_id{$id} = [@new_id];
+	}
+
+	return \%new_id;
+
+} # End of generate.
+
+# -----------------------------------------------
+
+sub get_size
+{
+	my($self, $meta_data) = @_;
+	my(@size)             = Image::Size::imgsize($$meta_data{'server_file_name'});
+	$$meta_data{'height'} = $size[0] ? $size[0] : 0;
+	$$meta_data{'width'}  = $size[0] ? $size[1] : 0;
+
+} # End of get_size.
+
+# -----------------------------------------------
 # Note: $field_name is not used in the default manager.
 
 sub insert
@@ -327,209 +414,6 @@ sub update
 
 # -----------------------------------------------
 
-sub do_upload
-{
-	my($self, $field_name, $temp_file_name) = @_;
-	my($q)         = $self -> query();
-	my($file_name) = $q -> param($field_name);
-
-	# Now strip off the volume/path info, if any.
-
-	my($client_os) = $^O;
-	my($browser)   = HTTP::BrowserDetect -> new();
-	$client_os     = 'MSWin32' if ($browser -> windows() );
-	$client_os     = 'MacOS'   if ($browser -> mac() );
-	$client_os     = 'Unix'    if ($browser->macosx() );
-
-	File::Basename::fileparse_set_fstype($client_os);
-
-	$file_name = File::Basename::fileparse($file_name,[]);
-
-	my($fh);
-	my($mime_type);
-
-	if ($q -> isa('Apache::Request') || $q -> isa('Apache2::Request') )
-	{
-		my($upload) = $q -> upload($field_name);
-		$fh         = $upload -> fh();
-		$mime_type  = $upload -> type();
-	}
-	else # It's a CGI.
-	{
-		$fh        = $q -> upload($field_name);
-		$mime_type = $q -> uploadInfo($fh);
-
-		if ($mime_type)
-		{
-			$mime_type = $$mime_type{'Content-Type'};
-		}
-
-		if (! $fh && $q -> cgi_error() )
-		{
-			confess $q -> cgi_error();
-		}
-	}
-
-	if (! $fh)
-	{
-		confess 'Unable to generate a file handle';
-	}
-
-	binmode($fh);
-	copy($fh, $temp_file_name) || confess "Unable to create temp file '$temp_file_name': $!";
-
-	# Determine the file extension, if any.
-
-	my($mime_types) = MIME::Types -> new();
-	my($type)       = $mime_types -> type($mime_type);
-	my(@extension)  = $type ? $type -> extensions() : ();
-	my($client_ext) = ($file_name =~ m/\.([\w\d]*)?$/);
-	$client_ext     = '' if (! $client_ext);
-	my($server_ext) = '';
-
-	if ($extension[0])
-	{
-		# If the client extension is one recognized by MIME::Type, use it.
-
-		if (defined($client_ext) && (grep {/^$client_ext$/} @extension) )
-		{
-			$server_ext = $client_ext;
-		}
-	}
-	else
-	{
-		# If is a provided extension but no MIME::Type extension, use that.
-
-		$server_ext = $client_ext;
-	}
-
-	return
-	{
-		client_file_name => $file_name,
-		date_stamp       => 'now()',
-		extension        => $server_ext,
-		height           => 0,
-		id               => 0,
-		mime_type        => $mime_type || '',
-		parent_id        => 0,
-		server_file_name => '',
-		size             => (stat $temp_file_name)[7],
-		width            => 0,
-	};
-
-} # End of do_upload.
-
-# -----------------------------------------------
-
-sub generate
-{
-	my($self, %field) = @_;
-	my($field)        = $self -> validate_generate_options(%field);
-
-	# Ensure a dbh or dsn was specified.
-
-	if (! $self -> has_dbh() && ! ($$field{'dbh'} || $$field{'dsn'}) )
-	{
-		confess "You must provide at least one of dbh and dsn for 'generate'";
-	}
-
-	# Use either the caller's dbh or fabricate one.
-
-	$self -> default_dbh($$field{'dsn'});
-
-	my(@id)         = keys %{$$field{'records'} };
-	my($sql)        = "select * from $$field{'table_name'} where $$field{'column_map'}{'id'} in (" . ('?, ') x $#id . '?)';
-	my($data)      = $self -> dbh() -> selectall_hashref($sql, 'id', {}, @id);
-	my($map)       = $self -> default_column_map();
-	my($meta_data) = {};
-	my($option)    = {};
-	my($column)    = {};
-
-	my($ext);
-	my($id);
-	my($key);
-	my(@new_id, %new_id);
-	my($record);
-	my($temp_file_name);
-
-	for $id (keys %$data)
-	{
-		for $key (keys %$map)
-		{
-			# Skip columns the caller does not want processed.
-
-			if (! $$field{'column_map'}{$key})
-			{
-				next;
-			}
-
-			$$column{$key} = $$data{$id}{$$field{'column_map'}{$key} };
-		}
-
-		@new_id = ();
-
-		# Simplify the interface. Allow the user to replace $id => [{...}] with $id => {...}.
-		# So, here we turn {...} back in to [{...}].
-
-		if (ref($$field{'records'}{$id}) ne 'ARRAY')
-		{
-			$$field{'records'}{$id} = [$$field{'records'}{$id}];
-		}
-
-		for $record (@{$$field{'records'}{$id} })
-		{
-			# Note:
-			# o insert()         updates $$meta_data{'id'}
-			# o do_copy_temp_file() updates $$meta_data{'server_file_name'}
-			# o get_size()          updates $$meta_data{'width'}
-			# o get_size()          updates $$meta_data{'height'}
-
-			$$meta_data{'extension'}  = $$column{'extension'};
-			($temp_file_name, $ext)   = $record -> ($$column{'server_file_name'}, $$meta_data{'extension'});
-			$$option{'column_map'}    = $$field{'column_map'};
-			$$option{'file_scheme'}   = $$field{'file_scheme'};
-			$$option{'path'}          = $$field{'path'};
-			$$option{'sequence_name'} = $$field{'sequence_name'};
-			$$option{'table_name'}    = $$field{'table_name'};
-			$$meta_data{$_}           = $$column{$_} for keys %$column;
-			$$meta_data{'extension'}  = $ext;
-			$$meta_data{'parent_id'}  = $id;
-			$$meta_data{'size'}       = (stat $temp_file_name)[7];
-
-			$$field{'manager'} -> insert($$meta_data{'server_file_name'}, $meta_data, $option);
-			$self -> copy_temp_file($temp_file_name, $meta_data, $option);
-			$self -> get_size($meta_data);
-
-			$sql = "update $$field{'table_name'} set $$field{'column_map'}{'width'} = ?, " .
-				"$$field{'column_map'}{'height'} = ? where $$field{'column_map'}{'id'} = ?";
-
-			$self -> dbh() -> do($sql, {}, $$meta_data{'height'}, $$meta_data{'width'}, $$meta_data{'id'});
-
-			push @new_id, $$meta_data{'id'};
-
-			File::Temp::cleanup();
-		}
-
-		$new_id{$id} = [@new_id];
-	}
-
-	return \%new_id;
-
-} # End of generate.
-
-# -----------------------------------------------
-
-sub get_size
-{
-	my($self, $meta_data) = @_;
-	my(@size)             = Image::Size::imgsize($$meta_data{'server_file_name'});
-	$$meta_data{'height'} = $size[0] ? $size[0] : 0;
-	$$meta_data{'width'}  = $size[0] ? $size[1] : 0;
-
-} # End of get_size.
-
-# -----------------------------------------------
-
 sub upload
 {
 	my($self, %field) = @_;
@@ -547,9 +431,14 @@ sub upload
 
 		# Perform the upload for this field.
 
-		my($temp_fh, $temp_file_name) = tempfile('CGIuploaderXXXXX', UNLINK => 1, DIR => $self -> temp_dir() );
-		$meta_data                    = $self -> do_upload($field_name, $temp_file_name);
-		my($store_count)              = 0;
+		$meta_data                      = $self -> source() -> upload($field_name);
+		$$meta_data{'date_stamp'}       = 'now()';
+		$$meta_data{'height'}           = 0;
+		$$meta_data{'id'}               = 0;
+		$$meta_data{'parent_id'}        = 0;
+		$$meta_data{'server_file_name'} = '';
+		$$meta_data{'width'}            = 0;
+		my($store_count)                = 0;
 
 		# Loop over all store options.
 
@@ -568,12 +457,14 @@ sub upload
 
 			if ($$store_option{'transform'})
 			{
-				($temp_file_name, $$meta_data{'extension'}) = $$store_option{'transform'} -> ($temp_file_name, $$meta_data{'extension'});
-				$$meta_data{'size'}                         = (stat $temp_file_name)[7];
+				my(@transform) = $$store_option{'transform'} -> ($$meta_data{'server_temp_name'}, $$meta_data{'extension'});
+				$$meta_data{'server_temp_name'} = $transform[0];
+				$$meta_data{'extension'}        = $transform[1];
+				$$meta_data{'size'}             = (stat $transform[0])[7];
 			}
 
 			$$store_option{'manager'} -> insert($field_name, $meta_data, $store_option);
-			$self -> copy_temp_file($temp_file_name, $meta_data, $store_option);
+			$self -> copy_temp_file($meta_data, $store_option);
 
 			if ($store_count == 1)
 			{
@@ -1031,11 +922,11 @@ as one of your options causes the subref to be called.
 
 =back
 
-Here are the 2 examples I used in testing:
+Here are the 2 examples I used in testing (in CGI::Uploader::Test):
 
-	 transform => CGI::Uploader::Transform::ImageMagick::transformer(height => 400, width => 500)
+	 transform => CGI::Uploader::Transform::ImageMagick::transform(height => 400, width => 500)
 
-	 transform => CGI::Uploader::Transform::Imager::transformer(ypixels => 400, xpixels => 500)
+	 transform => CGI::Uploader::Transform::Imager::transform(ypixels => 400, xpixels => 500)
 
 As you can see, C<CGI::Uploader> ships with 2 sample transformers, one using C<Image::Magick> and one
 using C<Imager>. Both of these do no more than resize the image.
@@ -1429,12 +1320,13 @@ A mini-synopsis:
 
 =item Upload file
 
-C<upload()> calls C<do_upload()> to do the work of uploading the caller's file to a temporary file.
+C<upload()> calls your source object, by default C<CGI::Uploader::Source::Default>, to do the work of uploading
+the caller's file to a temporary file.
 
 This is done once, whereas the following steps are done once for each hashref of storage options
 you specify in the arrayref pointed to by the 'current' CGI form field's name.
 
-C<do_upload()> returns a hashref of meta-data associated with the file.
+You source object must return a hashref of meta-data associated with the file.
 
 =item Transform the file
 
@@ -1517,7 +1409,7 @@ This key (column_map) is optional.
 This is a database handle for use by the default manager class (which is just C<CGI::Uploader>)
 discussed below, under I<manager>.
 
-This key is optional if you use the I<manager> key, since in that case you do anything in your own
+This key is optional if you use the I<manager> key, since in that case you can do anything in your own
 storage manager code.
 
 If you do provide the I<dbh> key, it is passed in to your manager just in case you need it.
@@ -1529,7 +1421,7 @@ dbh via C<DBI>.
 
 =item dsn => [...]
 
-This key is optional if you use the I<manager> key, since in that case you do anything in your own
+This key is optional if you use the I<manager> key, since in that case you can do anything in your own
 storage manager code.
 
 If you do provide the I<dsn> key, it is passed in to your manager just in case you need it.
@@ -1611,7 +1503,7 @@ This key (file_scheme) is optional.
 
 This is an instance of your class which will manage the transfer of meta-data to a database table.
 
-In the case you provide the I<manager> key, your object is responsible for saving (or discarding!) the meta-data.
+In the case you provide the I<manager> key, your object is responsible for saving the meta-data.
 
 If you provide an object here, C<CGI::Uploader> will call
 $object => insert($field_name, $meta_data, $store_option).

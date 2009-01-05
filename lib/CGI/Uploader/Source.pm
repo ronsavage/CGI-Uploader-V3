@@ -4,28 +4,33 @@ use warnings;
 require Carp;
 use Squirrel;
 
-our $VERSION = 1.00; 
+our $VERSION = '2.90_03';
 
-has tmp_filename  => (is => 'rw' , required => 0 , predicate => 'has_tmp_filename' , isa => 'Str');
-has mime_type     => (is => 'rw' , required => 0 , predicate => 'has_mime_type'    , isa => 'Str');
-has field_value   => (is => 'rw' , required => 0 , predicate => 'has_field_value'  , isa => 'Str');
+has temp_dir      => (is => 'rw' , required => 0 , predicate => 'has_temp_dir'      , isa => 'Str');
+has temp_filename => (is => 'rw' , required => 0 , predicate => 'has_temp_filename' , isa => 'Str');
+has mime_type     => (is => 'rw' , required => 0 , predicate => 'has_mime_type'     , isa => 'Str' , default => '');
+has field_value   => (is => 'rw' , required => 0 , predicate => 'has_field_value'   , isa => 'Str');
 
+# -----------------------------------------------
 
-sub upload         { Carp::croak('Method "upload" not implemented by subclass') }
-# sub tmp_filename   { Carp::croak('Method "tmp_filename" not implemented by subclass') } 
+sub upload         { Carp::croak('Method "upload" must be implemented by a subclass') }
+# sub temp_filename   { Carp::croak('Method "temp_filename" not implemented by subclass') } 
 # sub mime_type      { Carp::croak('Method "mime_type" not implemented by subclass') }  
 # sub field_value    { Carp::croak('Method "field_value" not implemented by subclass') }   
 
+# -----------------------------------------------
+
 1;
+
 __END__
 
 =head1 NAME
 
-CGI::Uploader::Source - Base class for sources;
+CGI::Uploader::Source - Base class for sources
 
 =head1 SYNOPSIS
 
-To create a new source, like a new kind of query object: 
+To create a new source, such as a new kind of query object: 
 
   package CGI::Uploader::Source::MySrc;
   use base 'CGI::Uploader::Source';
@@ -35,7 +40,7 @@ To create a new source, like a new kind of query object:
     my $field_name = shift; 
 
     # .... upload action here
-    $self->tmp_filename('/tmp/foo.txt');
+    $self->temp_filename('/temp/foo.txt');
     $self->mime_type('text/plain');
     $self->field_value('/home/mark/foo.txt');
     return 1;
@@ -50,7 +55,7 @@ To use the source in your upload spec:
 
 =head1 DESCRIPTION
 
-L<CGI::Uploader::Source> is a base class for upload sources in L<CGI::Uploader>.
+L<CGI::Uploader::Source> is a base class for upload sources used by L<CGI::Uploader>.
 
 =head1 METHODS
 
@@ -58,17 +63,17 @@ L<CGI::Uploader::Source> is a base class for upload sources in L<CGI::Uploader>.
 
 See the Synopsis. 
 
-Given a the name of a file upload field, upload the the file and store it in
-the C<tmp_filename> attribute. If a MIME type was sent, store that in the
-C<mime_type> attribute. Also, store the field value in the C<field_value>
+Given the name of a file upload field, upload the file and store its name (on the server) in
+the C<temp_filename> attribute. If a MIME type was sent, store that in the
+C<mime_type> attribute. Also, store the field's value (client file name) in the C<field_value>
 attribute if it is available.
 
 =head1 ATTRIBUTES
 
-=head2 tmp_filename()
+=head2 temp_filename()
 
-  $src->tmp_filename('/tmp/foo.txt');
-  $filename = $src->tmp_filename();
+  $src->temp_filename('/temp/foo.txt');
+  $filename = $src->temp_filename();
 
 The temporary filename where the result of the upload is stored. Usually set by
 calling the 'upload()' method. 
